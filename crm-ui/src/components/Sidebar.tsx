@@ -45,10 +45,10 @@ export default function Sidebar({ activeModule, onModuleChange }: Props) {
       </nav>
 
       <div className="p-4 border-t border-white/10 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-full bg-orange-900 flex items-center justify-center text-[10px] font-bold">MC</div>
+        <div className="w-8 h-8 rounded-full bg-orange-900 flex items-center justify-center text-[10px] font-bold">DU</div>
         <div className="flex flex-col">
-          <span className="text-xs font-bold">Mandy Cheng</span>
-          <span className="text-[10px] text-gray-500">Gain Miles - TW</span>
+          <span className="text-xs font-bold">Demo User</span>
+          <span className="text-[10px] text-gray-500">Demo Company</span>
         </div>
       </div>
     </div>

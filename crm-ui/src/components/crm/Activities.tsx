@@ -1,10 +1,10 @@
 import { Phone, Mail, Users, Calendar } from 'lucide-react';
 
 const ACTIVITIES = [
-  { id: 1, type: 'Call', subject: 'Follow-up on proposal', contact: 'John Chan', date: '2024-03-25', status: 'Done' },
-  { id: 2, type: 'Email', subject: 'MPF scheme comparison', contact: 'Sarah Wong', date: '2024-03-26', status: 'Planned' },
-  { id: 3, type: 'Meeting', subject: 'Presentation – Alpha Corp', contact: 'James Liu', date: '2024-03-28', status: 'Planned' },
-  { id: 4, type: 'Call', subject: 'Renewal reminder', contact: 'Delta Contact', date: '2024-03-20', status: 'Done' },
+  { id: 1, type: 'Call', subject: 'Follow-up on proposal', contact: 'User D', date: '2024-03-25', status: 'Done' },
+  { id: 2, type: 'Email', subject: 'MPF scheme comparison', contact: 'User C', date: '2024-03-26', status: 'Planned' },
+  { id: 3, type: 'Meeting', subject: 'Presentation – Company A', contact: 'User B', date: '2024-03-28', status: 'Planned' },
+  { id: 4, type: 'Call', subject: 'Renewal reminder', contact: 'User A', date: '2024-03-20', status: 'Done' },
 ];
 
 const TYPE_ICON: Record<string, React.ReactNode> = {

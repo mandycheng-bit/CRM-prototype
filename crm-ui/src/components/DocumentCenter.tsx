@@ -1,10 +1,10 @@
 import { FileText, Download } from 'lucide-react';
 
 const DOCS = [
-  { name: 'Q1 2024 Market Report.pdf', type: 'Report', date: '2024-03-31', size: '2.4 MB' },
-  { name: 'AIA Product Brochure.pdf', type: 'Brochure', date: '2024-02-15', size: '1.8 MB' },
-  { name: 'MPF Performance Summary.xlsx', type: 'Data', date: '2024-03-01', size: '450 KB' },
-  { name: 'Compliance Checklist 2024.docx', type: 'Compliance', date: '2024-01-10', size: '120 KB' },
+  { name: 'sample_market_report.pdf', type: 'Report', date: '2024-03-31', size: '2.4 MB' },
+  { name: 'demo_product_brochure.pdf', type: 'Brochure', date: '2024-02-15', size: '1.8 MB' },
+  { name: 'test_mpf_summary.xlsx', type: 'Data', date: '2024-03-01', size: '450 KB' },
+  { name: 'sample_compliance_checklist.docx', type: 'Compliance', date: '2024-01-10', size: '120 KB' },
 ];
 
 export default function DocumentCenter() {

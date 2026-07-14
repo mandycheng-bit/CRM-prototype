@@ -577,9 +577,9 @@ export const ProductsConfiguration: React.FC = () => {
     const saved = localStorage.getItem('pr2_product_audits');
     if (saved) return JSON.parse(saved);
     return [
-      { id: 'AUD-P001', eventType: 'Configuration Change', changedField: 'Product Item Name', oldValue: 'GUM Pension Choice', newValue: 'GUM Pension Choice Premium', changedBy: 'Mandy Cheng', changedOn: '2026-06-25 10:15', productName: 'GUM Pension Choice Premium' },
-      { id: 'AUD-P002', eventType: 'Status Update', changedField: 'Applied Customer Types', oldValue: 'Company', newValue: 'Company, Individual', changedBy: 'Mandy Cheng', changedOn: '2026-06-25 11:30', productName: 'GUM Pension Choice Premium' },
-      { id: 'AUD-P003', eventType: 'Field Visibility Update', changedField: 'Proposed Insurer Required', oldValue: 'False', newValue: 'True', changedBy: 'Mandy Cheng', changedOn: '2026-06-25 14:00', productName: 'GUM Pension Choice Premium' }
+      { id: 'AUD-P001', eventType: 'Configuration Change', changedField: 'Product Item Name', oldValue: 'Demo Pension Choice', newValue: 'Demo Pension Choice Premium', changedBy: 'Admin User', changedOn: '2026-06-25 10:15', productName: 'Demo Pension Choice Premium' },
+      { id: 'AUD-P002', eventType: 'Status Update', changedField: 'Applied Customer Types', oldValue: 'Company', newValue: 'Company, Individual', changedBy: 'Admin User', changedOn: '2026-06-25 11:30', productName: 'Demo Pension Choice Premium' },
+      { id: 'AUD-P003', eventType: 'Field Visibility Update', changedField: 'Proposed Insurer Required', oldValue: 'False', newValue: 'True', changedBy: 'Admin User', changedOn: '2026-06-25 14:00', productName: 'Demo Pension Choice Premium' }
     ];
   });
 
@@ -646,6 +646,9 @@ export const ProductsConfiguration: React.FC = () => {
   const [detailPremiumFields, setDetailPremiumFields] = useState<FieldConfig[]>([]);
   const [detailDateTransferFields, setDetailDateTransferFields] = useState<FieldConfig[]>([]);
   const [detailStatus, setDetailStatus] = useState<'Active' | 'Archived'>('Active');
+
+  // Inline save errors
+  const [saveErrors, setSaveErrors] = useState<{ name?: string; customerType?: string }>({});
 
   // Modal / Toast
   const [showAuditModal, setShowAuditModal] = useState(false);
@@ -839,7 +842,7 @@ export const ProductsConfiguration: React.FC = () => {
       changedField: 'All Fields',
       oldValue: 'None',
       newValue: `${newName} (${newId})`,
-      changedBy: 'Mandy Cheng',
+      changedBy: 'System Admin',
       changedOn: timestamp,
       productName: newName
     }, ...prev]);
@@ -875,7 +878,7 @@ export const ProductsConfiguration: React.FC = () => {
       changedField: 'All Fields',
       oldValue: `${p.name} (${p.id})`,
       newValue: `${newName} (${newId})`,
-      changedBy: 'Mandy Cheng',
+      changedBy: 'System Admin',
       changedOn: timestamp,
       productName: newName
     }, ...prev]);
@@ -905,7 +908,7 @@ export const ProductsConfiguration: React.FC = () => {
           changedField: 'All Fields',
           oldValue: `${productToDelete.name} (${productToDelete.id})`,
           newValue: 'Deleted from Catalog',
-          changedBy: 'Mandy Cheng',
+          changedBy: 'System Admin',
           changedOn: timestamp,
           productName: productToDelete.name
         }, ...prev]);
@@ -920,21 +923,21 @@ export const ProductsConfiguration: React.FC = () => {
   };
 
   const handleSaveAllSettings = () => {
+    const errors: { name?: string; customerType?: string } = {};
     if (!detailName.trim()) {
-      alert("Product Item Name is required.");
-      return;
+      errors.name = 'Product Item is required.';
+    } else {
+      const nameIsDuplicate = products.some(p => p.id !== selectedProductId && p.name.trim().toLowerCase() === detailName.trim().toLowerCase());
+      if (nameIsDuplicate) errors.name = `"${detailName.trim()}" is already in use. Please specify a unique name.`;
     }
-
-    const nameIsDuplicate = products.some(p => p.id !== selectedProductId && p.name.trim().toLowerCase() === detailName.trim().toLowerCase());
-    if (nameIsDuplicate) {
-      alert(`The product name "${detailName.trim()}" is already in use. Please specify a unique name.`);
-      return;
-    }
-
     if (detailCompanyTypes.length === 0) {
-      alert("Please select at least one Applied Customer Type.");
+      errors.customerType = 'Please select at least one Applied Customer Type.';
+    }
+    if (Object.keys(errors).length > 0) {
+      setSaveErrors(errors);
       return;
     }
+    setSaveErrors({});
 
     const timestamp = getSystemDatetimeString();
     const newAuditsList: ProductAuditRecord[] = [];
@@ -946,7 +949,7 @@ export const ProductsConfiguration: React.FC = () => {
         changedField: 'Product Item Name',
         oldValue: selectedProduct.name,
         newValue: detailName.trim(),
-        changedBy: 'Mandy Cheng',
+        changedBy: 'System Admin',
         changedOn: timestamp,
         productName: detailName.trim()
       });
@@ -959,7 +962,7 @@ export const ProductsConfiguration: React.FC = () => {
         changedField: 'Product Team',
         oldValue: selectedProduct.team,
         newValue: detailTeam,
-        changedBy: 'Mandy Cheng',
+        changedBy: 'System Admin',
         changedOn: timestamp,
         productName: detailName.trim()
       });
@@ -972,7 +975,7 @@ export const ProductsConfiguration: React.FC = () => {
         changedField: 'Product Category',
         oldValue: selectedProduct.group,
         newValue: detailGroup,
-        changedBy: 'Mandy Cheng',
+        changedBy: 'System Admin',
         changedOn: timestamp,
         productName: detailName.trim()
       });
@@ -985,7 +988,7 @@ export const ProductsConfiguration: React.FC = () => {
         changedField: 'GMI Product Group',
         oldValue: selectedProduct.gmiProductGroup || 'Pension',
         newValue: detailGmiProductGroup,
-        changedBy: 'Mandy Cheng',
+        changedBy: 'System Admin',
         changedOn: timestamp,
         productName: detailName.trim()
       });
@@ -1046,7 +1049,7 @@ export const ProductsConfiguration: React.FC = () => {
       changedField: 'GMI Product Group Added',
       oldValue: '(None)',
       newValue: trimmed,
-      changedBy: 'Mandy Cheng',
+      changedBy: 'System Admin',
       changedOn: timestamp,
       productName: `GMI Group: ${trimmed}`
     }, ...prev]);
@@ -1075,7 +1078,7 @@ export const ProductsConfiguration: React.FC = () => {
       changedField: 'GMI Product Group Renamed',
       oldValue: oldName,
       newValue: trimmed,
-      changedBy: 'Mandy Cheng',
+      changedBy: 'System Admin',
       changedOn: timestamp,
       productName: `GMI Group: ${trimmed}`
     }, ...prev]);
@@ -1095,7 +1098,7 @@ export const ProductsConfiguration: React.FC = () => {
       changedField: 'GMI Product Group Status',
       oldValue: grp.status,
       newValue: nextStatus,
-      changedBy: 'Mandy Cheng',
+      changedBy: 'System Admin',
       changedOn: timestamp,
       productName: `GMI Group: ${grp.name}`
     }, ...prev]);
@@ -1133,7 +1136,7 @@ export const ProductsConfiguration: React.FC = () => {
       changedField: 'GMI Product Group Deleted',
       oldValue: grp.name,
       newValue: '(Deleted)',
-      changedBy: 'Mandy Cheng',
+      changedBy: 'System Admin',
       changedOn: timestamp,
       productName: `GMI Group: ${grp.name}`
     }, ...prev]);
@@ -1223,7 +1226,7 @@ export const ProductsConfiguration: React.FC = () => {
       changedField: 'Benefit Created & Linked',
       oldValue: '(None)',
       newValue: trimmed,
-      changedBy: 'Mandy Cheng',
+      changedBy: 'System Admin',
       changedOn: timestamp,
       productName: `Benefit: ${trimmed}`
     }, ...prev]);
@@ -1265,7 +1268,7 @@ export const ProductsConfiguration: React.FC = () => {
       changedField: 'Benefit Renamed',
       oldValue: oldName,
       newValue: trimmed,
-      changedBy: 'Mandy Cheng',
+      changedBy: 'System Admin',
       changedOn: timestamp,
       productName: `Benefit: ${trimmed}`
     }, ...prev]);
@@ -1284,7 +1287,7 @@ export const ProductsConfiguration: React.FC = () => {
       changedField: 'Benefit Status',
       oldValue: ben.status,
       newValue: nextStatus,
-      changedBy: 'Mandy Cheng',
+      changedBy: 'System Admin',
       changedOn: timestamp,
       productName: `Benefit: ${ben.name}`
     }, ...prev]);
@@ -1324,7 +1327,7 @@ export const ProductsConfiguration: React.FC = () => {
       changedField: 'Benefit Deleted',
       oldValue: ben.name,
       newValue: '(Deleted)',
-      changedBy: 'Mandy Cheng',
+      changedBy: 'System Admin',
       changedOn: timestamp,
       productName: `Benefit: ${ben.name}`
     }, ...prev]);
@@ -1361,7 +1364,7 @@ export const ProductsConfiguration: React.FC = () => {
       changedField: 'Coverage Created & Linked',
       oldValue: '(None)',
       newValue: trimmed,
-      changedBy: 'Mandy Cheng',
+      changedBy: 'System Admin',
       changedOn: timestamp,
       productName: `Coverage: ${trimmed}`
     }, ...prev]);
@@ -1403,7 +1406,7 @@ export const ProductsConfiguration: React.FC = () => {
       changedField: 'Coverage Renamed',
       oldValue: oldName,
       newValue: trimmed,
-      changedBy: 'Mandy Cheng',
+      changedBy: 'System Admin',
       changedOn: timestamp,
       productName: `Coverage: ${trimmed}`
     }, ...prev]);
@@ -1422,7 +1425,7 @@ export const ProductsConfiguration: React.FC = () => {
       changedField: 'Coverage Status',
       oldValue: cov.status,
       newValue: nextStatus,
-      changedBy: 'Mandy Cheng',
+      changedBy: 'System Admin',
       changedOn: timestamp,
       productName: `Coverage: ${cov.name}`
     }, ...prev]);
@@ -1462,7 +1465,7 @@ export const ProductsConfiguration: React.FC = () => {
       changedField: 'Coverage Deleted',
       oldValue: cov.name,
       newValue: '(Deleted)',
-      changedBy: 'Mandy Cheng',
+      changedBy: 'System Admin',
       changedOn: timestamp,
       productName: `Coverage: ${cov.name}`
     }, ...prev]);
@@ -1712,7 +1715,7 @@ export const ProductsConfiguration: React.FC = () => {
                   <table className="w-full text-xs text-left min-w-[700px]">
                     <thead className="bg-gray-50 text-gray-500 text-[9px] uppercase tracking-wider border-b border-gray-200 font-bold font-mono">
                       <tr>
-                        <th className="px-4 py-3 border-r border-gray-200 w-[260px]">Product Item Name</th>
+                        <th className="px-4 py-3 border-r border-gray-200 w-[260px]">Product Item</th>
                         <th className="px-4 py-3 border-r border-gray-200">Product Team</th>
                         <th className="px-4 py-3 border-r border-gray-200">Product Category</th>
                         <th className="px-4 py-3 border-r border-gray-200">Applied Customer Type</th>
@@ -1811,7 +1814,7 @@ export const ProductsConfiguration: React.FC = () => {
                                         changedField: 'Status',
                                         oldValue: p.status || 'Active',
                                         newValue: nextStatus,
-                                        changedBy: 'Mandy Cheng',
+                                        changedBy: 'System Admin',
                                         changedOn: timestamp,
                                         productName: p.name
                                       }, ...prev]);
@@ -2203,14 +2206,15 @@ export const ProductsConfiguration: React.FC = () => {
                         <label className="text-[10px] font-black uppercase text-gray-400 block mb-1">
                           Product Item <span className="text-red-500">* (Required & Unique)</span>
                         </label>
-                        <input 
+                        <input
                           type="text"
                           required
                           value={detailName}
-                          onChange={(e) => setDetailName(e.target.value)}
+                          onChange={(e) => { setDetailName(e.target.value); setSaveErrors(prev => ({ ...prev, name: undefined })); }}
                           placeholder="e.g. Employee Benefit Healthcare Scheme"
-                          className="w-full px-3 py-2 border rounded-lg border-gray-300 focus:border-orange-500 outline-none font-semibold text-gray-800 bg-white"
+                          className={`w-full px-3 py-2 border rounded-lg focus:border-orange-500 outline-none font-semibold text-gray-800 bg-white ${saveErrors.name ? 'border-red-400' : 'border-gray-300'}`}
                         />
+                        {saveErrors.name && <p className="mt-1 text-[11px] text-red-500 font-semibold">{saveErrors.name}</p>}
                       </div>
 
                       <div>
@@ -2316,36 +2320,31 @@ export const ProductsConfiguration: React.FC = () => {
                         </label>
                         <div className="flex items-center gap-5 pt-1">
                           <label className="flex items-center gap-2 cursor-pointer">
-                            <input 
+                            <input
                               type="checkbox"
                               checked={detailCompanyTypes.includes('Company')}
                               onChange={() => {
-                                if (detailCompanyTypes.includes('Company')) {
-                                  setDetailCompanyTypes(prev => prev.filter(t => t !== 'Company'));
-                                } else {
-                                  setDetailCompanyTypes(prev => [...prev, 'Company']);
-                                }
+                                setDetailCompanyTypes(prev => prev.includes('Company') ? prev.filter(t => t !== 'Company') : [...prev, 'Company']);
+                                setSaveErrors(prev => ({ ...prev, customerType: undefined }));
                               }}
                               className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-0 cursor-pointer"
                             />
                             <span className="text-xs text-gray-700">Company</span>
                           </label>
                           <label className="flex items-center gap-2 cursor-pointer">
-                            <input 
+                            <input
                               type="checkbox"
                               checked={detailCompanyTypes.includes('Individual')}
                               onChange={() => {
-                                if (detailCompanyTypes.includes('Individual')) {
-                                  setDetailCompanyTypes(prev => prev.filter(t => t !== 'Individual'));
-                                } else {
-                                  setDetailCompanyTypes(prev => [...prev, 'Individual']);
-                                }
+                                setDetailCompanyTypes(prev => prev.includes('Individual') ? prev.filter(t => t !== 'Individual') : [...prev, 'Individual']);
+                                setSaveErrors(prev => ({ ...prev, customerType: undefined }));
                               }}
                               className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-0 cursor-pointer"
                             />
                             <span className="text-xs text-gray-700">Individual</span>
                           </label>
                         </div>
+                        {saveErrors.customerType && <p className="mt-1.5 text-[11px] text-red-500 font-semibold">{saveErrors.customerType}</p>}
                       </div>
                     </div>
                   </div>

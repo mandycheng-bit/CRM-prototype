@@ -1,9 +1,9 @@
 import { Users } from 'lucide-react';
 
 const TEAMS = [
-  { id: 1, name: 'HK Island Team', lead: 'Mandy Cheng', members: 4, proposals: 12, won: 5 },
-  { id: 2, name: 'Kowloon Team', lead: 'Peter Ho', members: 3, proposals: 8, won: 3 },
-  { id: 3, name: 'NT Team', lead: 'Alice Lam', members: 3, proposals: 6, won: 2 },
+  { id: 1, name: 'Team Alpha', lead: 'Sales Rep A', members: 4, proposals: 12, won: 5 },
+  { id: 2, name: 'Team Beta', lead: 'Sales Rep B', members: 3, proposals: 8, won: 3 },
+  { id: 3, name: 'Team Gamma', lead: 'Sales Rep C', members: 3, proposals: 6, won: 2 },
 ];
 
 export default function SalesTeamsWorkspace() {

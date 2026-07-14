@@ -1,14 +1,14 @@
 import { Building2, User } from 'lucide-react';
 
 const COMPANIES = [
-  { id: 1, name: 'Alpha Corp', industry: 'Technology', contact: 'John Chan', proposals: 2, status: 'Active' },
-  { id: 2, name: 'Beta Ltd', industry: 'Finance', contact: 'Sarah Wong', proposals: 1, status: 'Active' },
-  { id: 3, name: 'Gamma Industries', industry: 'Manufacturing', contact: 'Peter Ho', proposals: 3, status: 'Inactive' },
+  { id: 1, name: 'Company 001', industry: 'Technology', contact: 'User A', proposals: 2, status: 'Active' },
+  { id: 2, name: 'Company 002', industry: 'Finance', contact: 'User B', proposals: 1, status: 'Active' },
+  { id: 3, name: 'Company 003', industry: 'Manufacturing', contact: 'User C', proposals: 3, status: 'Inactive' },
 ];
 
 const INDIVIDUALS = [
-  { id: 1, name: 'James Liu', email: 'james@techstart.hk', region: 'HK Island', proposals: 1, status: 'Active' },
-  { id: 2, name: 'Mary Tam', email: 'mary@personal.hk', region: 'Kowloon', proposals: 0, status: 'Lead' },
+  { id: 1, name: 'User A', email: 'user.a@demo.com', region: 'HK Island', proposals: 1, status: 'Active' },
+  { id: 2, name: 'User B', email: 'user.b@demo.com', region: 'Kowloon', proposals: 0, status: 'Lead' },
 ];
 
 export default function Customers({ type }: { type: 'Company' | 'Individual' }) {

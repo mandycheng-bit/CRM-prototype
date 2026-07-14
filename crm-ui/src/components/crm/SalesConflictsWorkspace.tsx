@@ -1,8 +1,8 @@
 import { AlertTriangle } from 'lucide-react';
 
 const CONFLICTS = [
-  { id: 1, client: 'Alpha Corp', reps: ['Mandy Cheng', 'Peter Ho'], stage: 'Proposal', filed: '2024-03-10', status: 'Open' },
-  { id: 2, client: 'Tech Corp', reps: ['Alice Lam', 'Bob Chan'], stage: 'Qualification', filed: '2024-03-18', status: 'Resolved' },
+  { id: 1, client: 'Company 001', reps: ['Sales Rep A', 'Sales Rep B'], stage: 'Proposal', filed: '2024-03-10', status: 'Open' },
+  { id: 2, client: 'Company 002', reps: ['Agent 01', 'Agent 02'], stage: 'Qualification', filed: '2024-03-18', status: 'Resolved' },
 ];
 
 export default function SalesConflictsWorkspace() {

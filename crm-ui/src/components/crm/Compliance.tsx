@@ -1,9 +1,9 @@
 import { ShieldCheck } from 'lucide-react';
 
 const RECORDS = [
-  { id: 1, client: 'James Liu', type: 'KYC', status: 'Approved', date: '2024-02-10', reviewer: 'Compliance Team' },
-  { id: 2, client: 'Mary Tam', type: 'AML', status: 'Pending', date: '2024-03-15', reviewer: '—' },
-  { id: 3, client: 'Alpha Corp', type: 'KYC', status: 'Approved', date: '2023-11-20', reviewer: 'Compliance Team' },
+  { id: 1, client: 'User A', type: 'KYC', status: 'Approved', date: '2024-02-10', reviewer: 'Compliance Team' },
+  { id: 2, client: 'User B', type: 'AML', status: 'Pending', date: '2024-03-15', reviewer: '—' },
+  { id: 3, client: 'Company 001', type: 'KYC', status: 'Approved', date: '2023-11-20', reviewer: 'Compliance Team' },
 ];
 
 export default function ComplianceView() {

@@ -23,7 +23,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
   const displayStages = showLost ? ['Lost'] as ProposalStage[] : STAGES;
 
   const renderBoardView = () => (
-    <div className="flex gap-4 overflow-x-auto pb-4 flex-1 custom-scrollbar">
+    <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
       {displayStages.map(stage => {
         const proposals = getProposalsByStage(stage);
         const totalValue = proposals.reduce((sum, p) => sum + p.expectedRevenueGross, 0);
@@ -111,7 +111,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
   );
 
   const renderListView = () => (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex-1 flex flex-col">
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       <div className="overflow-x-auto flex-1">
         <table className="w-full text-sm whitespace-nowrap">
           <thead className="bg-gray-50 text-gray-500 uppercase text-[10px] font-bold sticky top-0 z-10">
@@ -179,7 +179,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
   );
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col p-6">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-bold text-gray-900">Prospect Pipeline</h1>

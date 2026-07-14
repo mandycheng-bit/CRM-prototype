@@ -55,8 +55,8 @@ export default function App() {
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-xs font-bold text-gray-600">MC</div>
             <div className="text-right">
-              <div className="text-xs font-bold text-gray-900">Mandy Cheng</div>
-              <div className="text-[10px] text-gray-500 uppercase tracking-tighter">Gain Miles - TW</div>
+              <div className="text-xs font-bold text-gray-900">Demo User</div>
+              <div className="text-[10px] text-gray-500 uppercase tracking-tighter">Demo Company</div>
             </div>
           </div>
         </header>

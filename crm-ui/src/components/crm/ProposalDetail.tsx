@@ -412,7 +412,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
     }
   };
 
-  const initialProductItem = proposal.productItem || 'Premium Care Gold';
+  const initialProductItem = proposal.productItem || 'Sample Care Gold';
   const initialProductTeam = resolveProductTeam(initialProductItem);
   const initialProductCategory = resolveProductCategory(initialProductItem);
 
@@ -428,16 +428,16 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
     estimatedSalesCredit: Math.round((proposal.expectedRevenueGross || 150000) * 0.15),
     netAmount: Math.round((proposal.expectedRevenueGross || 150000) * 0.92),
     // Customer Info
-    company: proposal.client || 'MODERN MEDIA CO. LTD.',
-    primaryContact: proposal.contactPerson || 'Sarah Jenkins',
-    phone: '+852 2843 9111',
-    email: 'sjenkins@modernmedia.hk',
+    company: proposal.client || 'DEMO COMPANY CO. LTD.',
+    primaryContact: proposal.contactPerson || 'User C',
+    phone: '+852 0000-1111',
+    email: 'user.c@demo.com',
     industry: 'Entertainment and Media',
     existingCustomer: 'No',
     existingPolicyCount: 0,
     gumCompany: 'GUM Company Limited',
     isMacau: 'No',
-    companyOdooId: 'odoo_comp_5541',
+    companyOdooId: 'odoo_comp_0001',
     // Product Info
     productTeam: initialProductTeam,
     productCategory: initialProductCategory,
@@ -446,27 +446,27 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
     campaign: proposal.campaign || 'Q2 Corporate Outreach',
     salesTeam: 'Hong Kong Corporate',
     // Sales Assignment
-    salesRep1: proposal.salesRep || 'Alice Wong',
+    salesRep1: proposal.salesRep || 'Sales Rep A',
     split1: 70,
-    salesRep2: 'Bob Chan',
+    salesRep2: 'Sales Rep B',
     split2: 30,
     salesRep3: '',
     split3: 0,
-    teamLeader: 'Sarah Jenkins',
+    teamLeader: 'Sales Rep C',
     // Marketing
     medium: 'Direct Referral',
     source: proposal.source || 'Broker Agent',
-    referredBy: 'GUM Executive Referral',
+    referredBy: 'Demo Referral Source',
     // Evaluation & Lifecycle
     leadTemperature: 'Hot',
     expectedEmployeeCount: 45,
     lossReason: '',
-    relationOpptyId: 'OPP-2026-0038',
-    gmiProposalLink: 'https://gmi.gainmiles.com.hk/proposal/P-2309-1229',
+    relationOpptyId: 'OPP-DEMO-0001',
+    gmiProposalLink: 'https://example.com/proposal/DEMO-0001',
     tags: ['Corporate', 'Q2 Outreach'],
-    opportunityNotes: proposal.remarks || 'Client requested urgent comparison for Ward vs Semi-Private coverage for 45 members.',
+    opportunityNotes: proposal.remarks || 'Sample company requested comparison for Ward vs Semi-Private coverage for demo members.',
     // System fields
-    opptyOdooId: 'odoo_opp_9482',
+    opptyOdooId: 'odoo_opp_0001',
     createdOn: '2026-03-20 10:15:30',
     opptyStageChangeDate: '2026-04-10 14:22:05',
   });
@@ -475,7 +475,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
   const [childProposals, setChildProposals] = useState<ChildProposal[]>([
     {
       id: 'P-2026-0001',
-      name: 'Modern Media Group Healthcare Plan Option A',
+      name: 'Demo Company Healthcare Plan Option A',
       version: 'v1.0',
       status: 'Approved',
       vendor: 'AIA',
@@ -484,30 +484,30 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
       effectiveDate: '2026-05-01',
       createdDate: '2026-03-01',
       lastUpdated: '2026-04-10',
-      createdBy: 'Alice Wong',
-      updatedBy: 'Sarah Jenkins',
+      createdBy: 'Sales Rep A',
+      updatedBy: 'Sales Rep C',
       summary: 'Comprehensive scheme offering premium semi-private hospitalization limits with $50 clinical network co-pay.',
       isCurrent: true,
       locationType: 'Hong Kong',
       productTeam: 'EBP Team',
       productCategory: 'Group Medical',
-      productItem: 'Premium Care Gold',
+      productItem: 'Sample Care Gold',
       gmiProductGroup: 'General Insurance',
-      selectedProducts: ['AIA Group Medical Option A', 'Bupa Premium Plan'],
+      selectedProducts: ['Sample Insurer Medical Option A', 'Demo Premium Plan'],
       standardPremium: 145000,
       premiumFrequency: 'Annual',
       currency: 'HKD',
       renewRequired: 'No',
       benefitType: 'Core Benefit',
       finalizedDate: '',
-      debitNoteNo: 'DN-99411',
+      debitNoteNo: 'DN-DEMO-001',
       policyStatus: 'Active',
       loadedBenefits: ['Critical Illness Benefit', 'Major Medical Coverage'],
       loadedCoverages: ['Worldwide', 'Worldwide (excluding US)']
     },
     {
       id: 'P-2026-0002',
-      name: 'Modern Media Alternative Budget Option B',
+      name: 'Demo Company Alternative Budget Option B',
       version: 'v1.1',
       status: 'In Progress',
       vendor: 'Bupa',
@@ -516,14 +516,14 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
       effectiveDate: '2026-05-01',
       createdDate: '2026-03-15',
       lastUpdated: '2026-04-02',
-      createdBy: 'Alice Wong',
-      updatedBy: 'Alice Wong',
+      createdBy: 'Sales Rep A',
+      updatedBy: 'Sales Rep A',
       summary: 'Value-focused alternative with ward-level accommodation and 20% clinical cost-sharing co-insurance.',
       isCurrent: false,
       locationType: 'Macau',
       productTeam: 'EBP Team',
       productCategory: 'Group Medical',
-      productItem: 'Standard Ward Plan',
+      productItem: 'Demo Ward Plan',
       gmiProductGroup: 'Employee Benefit & General Insurance',
       selectedProducts: ['Bupa Premium Plan'],
       standardPremium: 128000,
@@ -539,23 +539,23 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
 
   // EB Fact Finding State (Case Setup)
   const [factFinding, setFactFinding] = useState({
-    companyName: 'MODERN MEDIA CO. LTD.',
+    companyName: 'DEMO COMPANY CO. LTD.',
     industry: 'Entertainment and Media',
     employeeCount: 45,
     existingCustomer: 'No',
-    currentInsurer: 'AIA INTERNATIONAL LIMITED',
-    existingScheme: 'AIA Group Health & Care Plus',
+    currentInsurer: 'Sample Insurer Ltd',
+    existingScheme: 'Demo Group Health Plan',
     policyRenewalDate: '2026-05-01',
     policyEffectiveDate: '2026-05-01',
-    currentBroker: 'Direct Agent / AIA Broker Desk',
-    mpfScheme: 'AIA MPF Simple Retirement Plan',
+    currentBroker: 'Demo Broker Agent',
+    mpfScheme: 'Demo MPF Retirement Plan',
     annualContribution: 840000,
     assetValue: 4200000,
     employerOption: 'Voluntary Scheme Available',
     insuredEmployeesCount: 45,
     benefitSummary: 'Ward level cover for general staff, GP consultation limit HK$150 network.',
     lossRatio: '68.0%',
-    claimHistory: 'Generally low claims. Two outpatient hospitalizations for sports injuries last year.',
+    claimHistory: 'Sample claim history data for demo purposes.',
     renewalObjective: 'Maintain standard premium while enhancing dental benefits.',
     budget: 'HK$150,000 max annual budget',
     specialRequirements: 'Must include 2 visits of annual dental scaling coverage without co-pay.'
@@ -729,7 +729,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
   // Dynamic resolution for active child proposal in Benefit Design
   const activeChildGmiResolution = useMemo(() => {
     if (!selectedChild) return { group: '', benefits: [], coverages: [] };
-    const childItemName = selectedChild.productItem || 'Premium Care Gold';
+    const childItemName = selectedChild.productItem || 'Sample Care Gold';
     const group = getAssignedGmiProductGroup(childItemName);
     const { benefits, coverages } = resolveBenefitsAndCoverages(group);
     return { group, benefits, coverages };
@@ -742,7 +742,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
     return [
       {
         id: 'PROD-001',
-        name: 'GUM Pension Choice Premium',
+        name: 'Demo Pension Choice Premium',
         team: 'EB(GMED/GL/Tender)',
         group: 'Pension',
         appliedCompanyTypes: ['Company'],
@@ -768,7 +768,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
       },
       {
         id: 'PROD-002',
-        name: 'GMED Medical Care Tier A',
+        name: 'Demo Medical Care Tier A',
         team: 'EB(GMED/GL/Tender)',
         group: 'Employee Benefit & General Insurance',
         appliedCompanyTypes: ['Company'],
@@ -789,7 +789,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
       },
       {
         id: 'PROD-003',
-        name: 'Wealth Growth iFast Account',
+        name: 'Demo Growth iFast Account',
         team: 'Others',
         group: 'iFast',
         appliedCompanyTypes: ['Individual'],
@@ -809,7 +809,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
       },
       {
         id: 'PROD-005',
-        name: 'Premium Care Gold',
+        name: 'Sample Care Gold',
         team: 'EB(GMED/GL/Tender)',
         group: 'Employee Benefit & General Insurance',
         appliedCompanyTypes: ['Company'],
@@ -830,7 +830,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
       },
       {
         id: 'PROD-006',
-        name: 'Super Shield Bronze',
+        name: 'Demo Shield Bronze',
         team: 'EB(GMED/GL/Tender)',
         group: 'Employee Benefit & General Insurance',
         appliedCompanyTypes: ['Company'],
@@ -857,14 +857,14 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
   const [evaluationValues, setEvaluationValues] = useState<Record<string, string>>(() => {
     const saved = localStorage.getItem(`pr2_opp_eval_${proposal.id}`);
     return saved ? JSON.parse(saved) : {
-      'Proposed Service Provider': 'AIA',
-      'Existing Insurer': 'Bupa',
+      'Proposed Service Provider': 'Sample Insurer',
+      'Existing Insurer': 'Demo Insurer',
       'No. of Employee / Insured': '45',
       'Est Premium': '150000',
       'Application Date': '2026-03-25',
       'Form Received Date': '2026-03-24',
       'No. of Briefing Sessions': '2',
-      'Member Briefing Speaker': 'Alice Wong',
+      'Member Briefing Speaker': 'Sales Rep A',
       'Total Briefing Attendees': '38',
       'No. of Employee Transfer Est by ES': '40'
     };
@@ -895,23 +895,23 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
 
   // Activities Log State
   const [activities, setActivities] = useState([
-    { id: 1, type: 'Call', subject: 'Initial Discovery', date: '2026-03-22', notes: 'Discussed employee budget and basic inpatient needs with HR Lead.', user: 'Alice Wong' },
-    { id: 2, type: 'Meeting', subject: 'Plan Presentation', date: '2026-03-28', notes: 'Presented AIA Option A and gathered feedback on plan structures.', user: 'Alice Wong' }
+    { id: 1, type: 'Call', subject: 'Initial Discovery', date: '2026-03-22', notes: 'Discussed employee budget and basic inpatient needs with HR contact.', user: 'Sales Rep A' },
+    { id: 2, type: 'Meeting', subject: 'Plan Presentation', date: '2026-03-28', notes: 'Presented Option A and gathered feedback on plan structures.', user: 'Sales Rep A' }
   ]);
   const [newActivity, setNewActivity] = useState({ type: 'Call', subject: '', notes: '' });
 
   // Document Upload State
   const [documents, setDocuments] = useState([
-    { id: 'D1', name: 'AIA_Quotation_Package_ModernMedia.pdf', category: 'Quotation', date: '2026-03-25', size: '2.4 MB' },
-    { id: 'D2', name: 'GUM_Benefit_Comparison_Report_v1.pdf', category: 'Proposal Documents', date: '2026-04-01', size: '1.8 MB' }
+    { id: 'D1', name: 'demo_quotation.pdf', category: 'Quotation', date: '2026-03-25', size: '2.4 MB' },
+    { id: 'D2', name: 'sample_benefit_comparison.pdf', category: 'Proposal Documents', date: '2026-04-01', size: '1.8 MB' }
   ]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
   // Audit Trails
   const [auditLogs, setAuditLogs] = useState([
-    { id: 'A1', action: 'Proposal v1.0 Created', user: 'Alice Wong', date: '2026-03-25 10:00', details: 'Initialized from standard group medical template.' },
-    { id: 'A2', action: 'MCR Validation Approved', user: 'System Compliance', date: '2026-04-01 11:15', details: 'Validated against HK MCR regulations successfully.' }
+    { id: 'A1', action: 'Proposal v1.0 Created', user: 'Sales Rep A', date: '2026-03-25 10:00', details: 'Initialized from standard group medical template.' },
+    { id: 'A2', action: 'MCR Validation Approved', user: 'System', date: '2026-04-01 11:15', details: 'Validated against HK MCR regulations successfully.' }
   ]);
 
   // Save changes to opportunity
@@ -1011,8 +1011,8 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
       status: 'Draft',
       createdDate: new Date().toISOString().split('T')[0],
       lastUpdated: new Date().toISOString().split('T')[0],
-      createdBy: editedOpportunity.salesRep1 || 'Alice Wong',
-      updatedBy: editedOpportunity.salesRep1 || 'Alice Wong',
+      createdBy: editedOpportunity.salesRep1 || 'Sales Rep',
+      updatedBy: editedOpportunity.salesRep1 || 'Sales Rep',
       renewedFrom: propToRenew.id,
       renewDate: new Date().toISOString().split('T')[0],
       isCurrent: false,
@@ -1062,7 +1062,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
           setAuditLogs(logs => [{
             id: `A${logs.length + 1}`,
             action: 'Document Uploaded',
-            user: 'Alice Wong',
+            user: 'Current User',
             date: new Date().toISOString().replace('T', ' ').substring(0, 16),
             details: `Uploaded file: ${file.name}`
           }, ...logs]);
@@ -1836,7 +1836,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                       <div>
                         <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Product Item</label>
                         <select 
-                          value={selectedChild.productItem || 'Premium Care Gold'} 
+                          value={selectedChild.productItem || 'Sample Care Gold'} 
                           onChange={e => {
                             const selectedItem = e.target.value;
                             const groupName = getAssignedGmiProductGroup(selectedItem);
@@ -2165,7 +2165,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                       </div>
                       <div>
                         <span className="text-[9px] font-black text-gray-400 uppercase block font-sans">Created By</span>
-                        <span className="font-bold text-blue-700 font-sans">{selectedChild.createdBy || 'Alice Wong'}</span>
+                        <span className="font-bold text-blue-700 font-sans">{selectedChild.createdBy || 'Sales Rep A'}</span>
                       </div>
                       <div>
                         <span className="text-[9px] font-black text-gray-400 uppercase block font-sans">Last Updated</span>
@@ -2341,7 +2341,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                       <div className="bg-gray-50/50 border border-gray-200 rounded-lg p-3.5 space-y-1 text-xs">
                         <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest block">Assigned GMI Group</span>
                         <div className="font-extrabold text-gray-900 text-sm mt-1">{activeChildGmiResolution.group || 'General Insurance'}</div>
-                        <p className="text-gray-400 text-[10px] mt-1.5">Based on Product Item: <span className="font-bold text-gray-700">{selectedChild.productItem || 'Premium Care Gold'}</span></p>
+                        <p className="text-gray-400 text-[10px] mt-1.5">Based on Product Item: <span className="font-bold text-gray-700">{selectedChild.productItem || 'Sample Care Gold'}</span></p>
                       </div>
 
                       {/* Loaded Benefits */}
