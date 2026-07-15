@@ -38,7 +38,7 @@ export interface ProductItem {
   team: string; // references Product Team (CRUD-able list)
   group: string; // references Product Category (CRUD-able list)
   gmiProductGroup: string; // references GMI Product Group (Lookup)
-  appliedCompanyTypes: ('Company' | 'Individual')[]; // Multi-select Checkbox
+  appliedCompanyType: 'Company' | 'Individual'; // Radio Button (single-select, required)
   salesCreditRule: string; // Formula dropdown
   vendorFields: FieldConfig[];
   premiumFields: FieldConfig[];
@@ -518,7 +518,7 @@ const INITIAL_PRODUCTS: ProductItem[] = INITIAL_PRODUCT_NAMES.map((name, index) 
     team,
     group: category,
     gmiProductGroup: gmiGroup,
-    appliedCompanyTypes: index % 2 === 0 ? ['Company'] : ['Individual'],
+    appliedCompanyType: index % 2 === 0 ? 'Company' : 'Individual',
     salesCreditRule: `Formula ${1 + (index % 6)}`,
     vendorFields: INITIAL_VENDOR_FIELDS.map((f, i) => ({
       name: f,
@@ -578,7 +578,7 @@ export const ProductsConfiguration: React.FC = () => {
     if (saved) return JSON.parse(saved);
     return [
       { id: 'AUD-P001', eventType: 'Configuration Change', changedField: 'Product Item Name', oldValue: 'Demo Pension Choice', newValue: 'Demo Pension Choice Premium', changedBy: 'Admin User', changedOn: '2026-06-25 10:15', productName: 'Demo Pension Choice Premium' },
-      { id: 'AUD-P002', eventType: 'Status Update', changedField: 'Applied Customer Types', oldValue: 'Company', newValue: 'Company, Individual', changedBy: 'Admin User', changedOn: '2026-06-25 11:30', productName: 'Demo Pension Choice Premium' },
+      { id: 'AUD-P002', eventType: 'Status Update', changedField: 'Applied Customer Type', oldValue: 'Individual', newValue: 'Company', changedBy: 'Admin User', changedOn: '2026-06-25 11:30', productName: 'Demo Pension Choice Premium' },
       { id: 'AUD-P003', eventType: 'Field Visibility Update', changedField: 'Proposed Insurer Required', oldValue: 'False', newValue: 'True', changedBy: 'Admin User', changedOn: '2026-06-25 14:00', productName: 'Demo Pension Choice Premium' }
     ];
   });
@@ -640,7 +640,7 @@ export const ProductsConfiguration: React.FC = () => {
   const [detailName, setDetailName] = useState('');
   const [detailTeam, setDetailTeam] = useState('');
   const [detailGroup, setDetailGroup] = useState('');
-  const [detailCompanyTypes, setDetailCompanyTypes] = useState<('Company' | 'Individual')[]>([]);
+  const [detailCompanyType, setDetailCompanyType] = useState<'Company' | 'Individual'>('Company');
   const [detailSalesCreditRule, setDetailSalesCreditRule] = useState('');
   const [detailVendorFields, setDetailVendorFields] = useState<FieldConfig[]>([]);
   const [detailPremiumFields, setDetailPremiumFields] = useState<FieldConfig[]>([]);
@@ -648,7 +648,7 @@ export const ProductsConfiguration: React.FC = () => {
   const [detailStatus, setDetailStatus] = useState<'Active' | 'Archived'>('Active');
 
   // Inline save errors
-  const [saveErrors, setSaveErrors] = useState<{ name?: string; customerType?: string }>({});
+  const [saveErrors, setSaveErrors] = useState<{ name?: string }>({});
 
   // Modal / Toast
   const [showAuditModal, setShowAuditModal] = useState(false);
@@ -704,7 +704,7 @@ export const ProductsConfiguration: React.FC = () => {
       setDetailTeam(selectedProduct.team);
       setDetailGroup(selectedProduct.group);
       setDetailGmiProductGroup(selectedProduct.gmiProductGroup || 'Pension');
-      setDetailCompanyTypes(selectedProduct.appliedCompanyTypes || []);
+      setDetailCompanyType(selectedProduct.appliedCompanyType || 'Company');
       setDetailSalesCreditRule(selectedProduct.salesCreditRule || 'Formula 1');
       setDetailVendorFields(selectedProduct.vendorFields || []);
       setDetailPremiumFields(selectedProduct.premiumFields || []);
@@ -782,7 +782,7 @@ export const ProductsConfiguration: React.FC = () => {
       const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesGroup = groupFilter === 'All' || p.group === groupFilter;
       const matchesTeam = teamFilter === 'All' || p.team === teamFilter;
-      const matchesCompanyType = companyTypeFilter === 'All' || p.appliedCompanyTypes?.includes(companyTypeFilter as any);
+      const matchesCompanyType = companyTypeFilter === 'All' || p.appliedCompanyType === companyTypeFilter;
       const matchesStatus = statusFilter === 'Archived' 
         ? p.status === 'Archived' 
         : (p.status || 'Active') === 'Active';
@@ -816,7 +816,7 @@ export const ProductsConfiguration: React.FC = () => {
       team: productTeams[0] || 'Others',
       group: productGroups[0] || 'Pension',
       gmiProductGroup: defaultGmiGroup,
-      appliedCompanyTypes: ['Company'],
+      appliedCompanyType: 'Company',
       salesCreditRule: 'Formula 1',
       vendorFields: INITIAL_VENDOR_FIELDS.map(name => ({
         name,
@@ -923,15 +923,12 @@ export const ProductsConfiguration: React.FC = () => {
   };
 
   const handleSaveAllSettings = () => {
-    const errors: { name?: string; customerType?: string } = {};
+    const errors: { name?: string } = {};
     if (!detailName.trim()) {
       errors.name = 'Product Item is required.';
     } else {
       const nameIsDuplicate = products.some(p => p.id !== selectedProductId && p.name.trim().toLowerCase() === detailName.trim().toLowerCase());
       if (nameIsDuplicate) errors.name = `"${detailName.trim()}" is already in use. Please specify a unique name.`;
-    }
-    if (detailCompanyTypes.length === 0) {
-      errors.customerType = 'Please select at least one Applied Customer Type.';
     }
     if (Object.keys(errors).length > 0) {
       setSaveErrors(errors);
@@ -1006,7 +1003,7 @@ export const ProductsConfiguration: React.FC = () => {
           team: detailTeam,
           group: detailGroup,
           gmiProductGroup: detailGmiProductGroup,
-          appliedCompanyTypes: detailCompanyTypes,
+          appliedCompanyType: detailCompanyType,
           salesCreditRule: detailSalesCreditRule,
           vendorFields: detailVendorFields,
           premiumFields: detailPremiumFields,
@@ -1527,7 +1524,7 @@ export const ProductsConfiguration: React.FC = () => {
         'Product Name': p.name,
         'Product Team': p.team,
         'Product Category': p.group,
-        'Applied Customer Type': p.appliedCompanyTypes?.join(', ') || 'None',
+        'Applied Customer Type': p.appliedCompanyType || 'None',
         'Status': p.status || 'Active',
         'Sales Credit Rule': p.salesCreditRule || 'None',
         'Visible Fields (Vendor)': vendorVis,
@@ -1725,12 +1722,7 @@ export const ProductsConfiguration: React.FC = () => {
                     </thead>
                     <tbody className="divide-y divide-gray-100 font-semibold text-gray-600">
                       {filteredProducts.map((p) => {
-                        const hasCompany = p.appliedCompanyTypes?.includes('Company');
-                        const hasIndividual = p.appliedCompanyTypes?.includes('Individual');
-                        let customerTypeDisplay = 'None';
-                        if (hasCompany && hasIndividual) customerTypeDisplay = 'All Types';
-                        else if (hasCompany) customerTypeDisplay = 'Company';
-                        else if (hasIndividual) customerTypeDisplay = 'Individual';
+                        const customerTypeDisplay = p.appliedCompanyType || 'None';
 
                         return (
                           <tr
@@ -2321,30 +2313,25 @@ export const ProductsConfiguration: React.FC = () => {
                         <div className="flex items-center gap-5 pt-1">
                           <label className="flex items-center gap-2 cursor-pointer">
                             <input
-                              type="checkbox"
-                              checked={detailCompanyTypes.includes('Company')}
-                              onChange={() => {
-                                setDetailCompanyTypes(prev => prev.includes('Company') ? prev.filter(t => t !== 'Company') : [...prev, 'Company']);
-                                setSaveErrors(prev => ({ ...prev, customerType: undefined }));
-                              }}
-                              className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-0 cursor-pointer"
+                              type="radio"
+                              name="appliedCustomerType"
+                              checked={detailCompanyType === 'Company'}
+                              onChange={() => setDetailCompanyType('Company')}
+                              className="w-4 h-4 text-orange-600 border-gray-300 focus:ring-0 cursor-pointer"
                             />
                             <span className="text-xs text-gray-700">Company</span>
                           </label>
                           <label className="flex items-center gap-2 cursor-pointer">
                             <input
-                              type="checkbox"
-                              checked={detailCompanyTypes.includes('Individual')}
-                              onChange={() => {
-                                setDetailCompanyTypes(prev => prev.includes('Individual') ? prev.filter(t => t !== 'Individual') : [...prev, 'Individual']);
-                                setSaveErrors(prev => ({ ...prev, customerType: undefined }));
-                              }}
-                              className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-0 cursor-pointer"
+                              type="radio"
+                              name="appliedCustomerType"
+                              checked={detailCompanyType === 'Individual'}
+                              onChange={() => setDetailCompanyType('Individual')}
+                              className="w-4 h-4 text-orange-600 border-gray-300 focus:ring-0 cursor-pointer"
                             />
                             <span className="text-xs text-gray-700">Individual</span>
                           </label>
                         </div>
-                        {saveErrors.customerType && <p className="mt-1.5 text-[11px] text-red-500 font-semibold">{saveErrors.customerType}</p>}
                       </div>
                     </div>
                   </div>

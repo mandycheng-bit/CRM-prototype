@@ -745,7 +745,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
         name: 'Demo Pension Choice Premium',
         team: 'EB(GMED/GL/Tender)',
         group: 'Pension',
-        appliedCompanyTypes: ['Company'],
+        appliedCompanyType: 'Company',
         salesCreditRule: 'Formula 1',
         vendorFields: [
           { name: 'Existing Scheme 1', visible: true, required: false },
@@ -771,7 +771,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
         name: 'Demo Medical Care Tier A',
         team: 'EB(GMED/GL/Tender)',
         group: 'Employee Benefit & General Insurance',
-        appliedCompanyTypes: ['Company'],
+        appliedCompanyType: 'Company',
         salesCreditRule: 'Formula 2',
         vendorFields: [
           { name: 'Proposed Service Provider', visible: true, required: true },
@@ -792,7 +792,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
         name: 'Demo Growth iFast Account',
         team: 'Others',
         group: 'iFast',
-        appliedCompanyTypes: ['Individual'],
+        appliedCompanyType: 'Individual',
         salesCreditRule: 'Formula 4',
         vendorFields: [
           { name: 'Member First Name', visible: true, required: true },
@@ -812,7 +812,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
         name: 'Sample Care Gold',
         team: 'EB(GMED/GL/Tender)',
         group: 'Employee Benefit & General Insurance',
-        appliedCompanyTypes: ['Company'],
+        appliedCompanyType: 'Company',
         salesCreditRule: 'Formula 2',
         vendorFields: [
           { name: 'Proposed Service Provider', visible: true, required: true },
@@ -833,7 +833,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
         name: 'Demo Shield Bronze',
         team: 'EB(GMED/GL/Tender)',
         group: 'Employee Benefit & General Insurance',
-        appliedCompanyTypes: ['Company'],
+        appliedCompanyType: 'Company',
         salesCreditRule: 'Formula 3',
         vendorFields: [
           { name: 'Proposed Service Provider', visible: true, required: true },
