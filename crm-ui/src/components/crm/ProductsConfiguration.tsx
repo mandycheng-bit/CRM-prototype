@@ -586,6 +586,7 @@ export const ProductsConfiguration: React.FC = () => {
   // Sidebar / Navigation and View States (Consolidated to Product Items and Benefit Groups)
   const [activeTab, setActiveTab] = useState<'items' | 'benefitGroups'>('items');
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
+  const [isCreatingNew, setIsCreatingNew] = useState(false);
 
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -694,8 +695,9 @@ export const ProductsConfiguration: React.FC = () => {
 
   // Active selected item
   const selectedProduct = useMemo(() => {
+    if (isCreatingNew) return undefined;
     return products.find(p => p.id === selectedProductId) || products[0];
-  }, [products, selectedProductId]);
+  }, [products, selectedProductId, isCreatingNew]);
 
   // Sync detail fields when active product changes
   useEffect(() => {
@@ -799,58 +801,33 @@ export const ProductsConfiguration: React.FC = () => {
   // ACTIONS
   // ==========================================
   const handleCreateProductItem = () => {
-    const nextNum = products.length > 0 ? Math.max(...products.map(p => parseInt(p.id.split('-')[1]) || 0)) + 1 : 1;
-    const newId = `PROD-${String(nextNum).padStart(3, '0')}`;
-    const newName = `New Product Code ${nextNum}`;
-
-    if (products.some(p => p.name.toLowerCase() === newName.toLowerCase())) {
-      setToast('A product with this name already exists.');
-      return;
-    }
-
     const defaultGmiGroup = gmiGroupsMaster.find(g => g.status === 'Active')?.name || 'Pension';
 
-    const newProduct: ProductItem = {
-      id: newId,
-      name: newName,
-      team: productTeams[0] || 'Others',
-      group: productGroups[0] || 'Pension',
-      gmiProductGroup: defaultGmiGroup,
-      appliedCompanyType: 'Company',
-      salesCreditRule: 'Formula 1',
-      vendorFields: INITIAL_VENDOR_FIELDS.map(name => ({
-        name,
-        visible: name === 'Proposed Service Provider' || name === 'Proposed Insurer',
-        required: name === 'Proposed Service Provider' || name === 'Proposed Insurer'
-      })),
-      premiumFields: INITIAL_PREMIUM_FIELDS.map(name => ({
-        name,
-        visible: false,
-        required: false
-      })),
-      dateTransferFields: INITIAL_DATE_TRANSFER_FIELDS.map(name => ({
-        name,
-        visible: false,
-        required: false
-      }))
-    };
-
-    const timestamp = getSystemDatetimeString();
-    setProductAudits(prev => [{
-      id: `AUD-P-${Date.now()}`,
-      eventType: 'Product Creation',
-      changedField: 'All Fields',
-      oldValue: 'None',
-      newValue: `${newName} (${newId})`,
-      changedBy: 'System Admin',
-      changedOn: timestamp,
-      productName: newName
-    }, ...prev]);
-
-    setProducts(prev => [...prev, newProduct]);
-    setSelectedProductId(newId);
+    setIsCreatingNew(true);
+    setDetailName('');
+    setDetailTeam(productTeams[0] || 'Others');
+    setDetailGroup(productGroups[0] || 'Pension');
+    setDetailGmiProductGroup(defaultGmiGroup);
+    setDetailCompanyType('Company');
+    setDetailSalesCreditRule('Formula 1');
+    setDetailVendorFields(INITIAL_VENDOR_FIELDS.map(name => ({
+      name,
+      visible: name === 'Proposed Service Provider' || name === 'Proposed Insurer',
+      required: name === 'Proposed Service Provider' || name === 'Proposed Insurer'
+    })));
+    setDetailPremiumFields(INITIAL_PREMIUM_FIELDS.map(name => ({
+      name,
+      visible: false,
+      required: false
+    })));
+    setDetailDateTransferFields(INITIAL_DATE_TRANSFER_FIELDS.map(name => ({
+      name,
+      visible: false,
+      required: false
+    })));
+    setDetailStatus('Active');
+    setSaveErrors({});
     setViewMode('detail');
-    setToast(`Product item "${newName}" registered.`);
   };
 
   const handleDuplicateProduct = (p: ProductItem) => {
@@ -927,7 +904,7 @@ export const ProductsConfiguration: React.FC = () => {
     if (!detailName.trim()) {
       errors.name = 'Product Item is required.';
     } else {
-      const nameIsDuplicate = products.some(p => p.id !== selectedProductId && p.name.trim().toLowerCase() === detailName.trim().toLowerCase());
+      const nameIsDuplicate = products.some(p => (isCreatingNew || p.id !== selectedProductId) && p.name.trim().toLowerCase() === detailName.trim().toLowerCase());
       if (nameIsDuplicate) errors.name = `"${detailName.trim()}" is already in use. Please specify a unique name.`;
     }
     if (Object.keys(errors).length > 0) {
@@ -935,6 +912,47 @@ export const ProductsConfiguration: React.FC = () => {
       return;
     }
     setSaveErrors({});
+
+    if (isCreatingNew) {
+      const nextNum = products.length > 0 ? Math.max(...products.map(p => parseInt(p.id.split('-')[1]) || 0)) + 1 : 1;
+      const newId = `PROD-${String(nextNum).padStart(3, '0')}`;
+      const newName = detailName.trim();
+
+      const newProduct: ProductItem = {
+        id: newId,
+        name: newName,
+        team: detailTeam,
+        group: detailGroup,
+        gmiProductGroup: detailGmiProductGroup,
+        appliedCompanyType: detailCompanyType,
+        salesCreditRule: detailSalesCreditRule,
+        vendorFields: detailVendorFields,
+        premiumFields: detailPremiumFields,
+        dateTransferFields: detailDateTransferFields,
+        status: detailStatus
+      };
+
+      const timestamp = getSystemDatetimeString();
+      setProductAudits(prev => [{
+        id: `AUD-P-${Date.now()}`,
+        eventType: 'Product Creation',
+        changedField: 'All Fields',
+        oldValue: 'None',
+        newValue: `${newName} (${newId})`,
+        changedBy: 'System Admin',
+        changedOn: timestamp,
+        productName: newName
+      }, ...prev]);
+
+      setProducts(prev => [...prev, newProduct]);
+      setIsCreatingNew(false);
+      setSelectedProductId(newId);
+      setViewMode('list');
+      setToast(`Product item "${newName}" registered.`);
+      return;
+    }
+
+    if (!selectedProduct) return;
 
     const timestamp = getSystemDatetimeString();
     const newAuditsList: ProductAuditRecord[] = [];
@@ -2109,6 +2127,8 @@ export const ProductsConfiguration: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
+                  setIsCreatingNew(false);
+                  setSaveErrors({});
                   setViewMode('list');
                 }}
                 className="px-3 py-1.5 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 font-bold uppercase text-[9px] rounded-lg flex items-center justify-center gap-1 cursor-pointer h-8"
