@@ -39,6 +39,7 @@ export interface ProductItem {
   group: string; // references Product Category (CRUD-able list)
   gmiProductGroup: string; // references GMI Product Group (Lookup)
   appliedCompanyType: 'Company' | 'Individual'; // Radio Button (single-select, required)
+  isInsuranceProduct?: 'Yes' | 'No'; // Conditional: shown/required only when appliedCompanyType === 'Individual'
   salesCreditRule: string; // Formula dropdown
   vendorFields: FieldConfig[];
   premiumFields: FieldConfig[];
@@ -642,6 +643,7 @@ export const ProductsConfiguration: React.FC = () => {
   const [detailTeam, setDetailTeam] = useState('');
   const [detailGroup, setDetailGroup] = useState('');
   const [detailCompanyType, setDetailCompanyType] = useState<'Company' | 'Individual'>('Company');
+  const [detailIsInsuranceProduct, setDetailIsInsuranceProduct] = useState<'Yes' | 'No' | ''>('');
   const [detailSalesCreditRule, setDetailSalesCreditRule] = useState('');
   const [detailVendorFields, setDetailVendorFields] = useState<FieldConfig[]>([]);
   const [detailPremiumFields, setDetailPremiumFields] = useState<FieldConfig[]>([]);
@@ -649,7 +651,7 @@ export const ProductsConfiguration: React.FC = () => {
   const [detailStatus, setDetailStatus] = useState<'Active' | 'Archived'>('Active');
 
   // Inline save errors
-  const [saveErrors, setSaveErrors] = useState<{ name?: string }>({});
+  const [saveErrors, setSaveErrors] = useState<{ name?: string; team?: string; group?: string; gmiProductGroup?: string; salesCreditRule?: string; isInsuranceProduct?: string }>({});
 
   // Modal / Toast
   const [showAuditModal, setShowAuditModal] = useState(false);
@@ -707,6 +709,7 @@ export const ProductsConfiguration: React.FC = () => {
       setDetailGroup(selectedProduct.group);
       setDetailGmiProductGroup(selectedProduct.gmiProductGroup || 'Pension');
       setDetailCompanyType(selectedProduct.appliedCompanyType || 'Company');
+      setDetailIsInsuranceProduct(selectedProduct.isInsuranceProduct || '');
       setDetailSalesCreditRule(selectedProduct.salesCreditRule || 'Formula 1');
       setDetailVendorFields(selectedProduct.vendorFields || []);
       setDetailPremiumFields(selectedProduct.premiumFields || []);
@@ -801,15 +804,14 @@ export const ProductsConfiguration: React.FC = () => {
   // ACTIONS
   // ==========================================
   const handleCreateProductItem = () => {
-    const defaultGmiGroup = gmiGroupsMaster.find(g => g.status === 'Active')?.name || 'Pension';
-
     setIsCreatingNew(true);
     setDetailName('');
-    setDetailTeam(productTeams[0] || 'Others');
-    setDetailGroup(productGroups[0] || 'Pension');
-    setDetailGmiProductGroup(defaultGmiGroup);
+    setDetailTeam('');
+    setDetailGroup('');
+    setDetailGmiProductGroup('');
     setDetailCompanyType('Company');
-    setDetailSalesCreditRule('Formula 1');
+    setDetailIsInsuranceProduct('');
+    setDetailSalesCreditRule('');
     setDetailVendorFields(INITIAL_VENDOR_FIELDS.map(name => ({
       name,
       visible: name === 'Proposed Service Provider' || name === 'Proposed Insurer',
@@ -900,13 +902,18 @@ export const ProductsConfiguration: React.FC = () => {
   };
 
   const handleSaveAllSettings = () => {
-    const errors: { name?: string } = {};
+    const errors: { name?: string; team?: string; group?: string; gmiProductGroup?: string; salesCreditRule?: string; isInsuranceProduct?: string } = {};
     if (!detailName.trim()) {
       errors.name = 'Product Item is required.';
     } else {
       const nameIsDuplicate = products.some(p => (isCreatingNew || p.id !== selectedProductId) && p.name.trim().toLowerCase() === detailName.trim().toLowerCase());
       if (nameIsDuplicate) errors.name = `"${detailName.trim()}" is already in use. Please specify a unique name.`;
     }
+    if (!detailTeam) errors.team = 'Product Team is required.';
+    if (!detailGroup) errors.group = 'Product Category is required.';
+    if (!detailGmiProductGroup) errors.gmiProductGroup = 'GMI Product Group is required.';
+    if (!detailSalesCreditRule) errors.salesCreditRule = 'Sales Credit Calculation Rule is required.';
+    if (detailCompanyType === 'Individual' && !detailIsInsuranceProduct) errors.isInsuranceProduct = 'Is Insurance Product is required.';
     if (Object.keys(errors).length > 0) {
       setSaveErrors(errors);
       return;
@@ -925,6 +932,7 @@ export const ProductsConfiguration: React.FC = () => {
         group: detailGroup,
         gmiProductGroup: detailGmiProductGroup,
         appliedCompanyType: detailCompanyType,
+        isInsuranceProduct: detailIsInsuranceProduct || undefined,
         salesCreditRule: detailSalesCreditRule,
         vendorFields: detailVendorFields,
         premiumFields: detailPremiumFields,
@@ -1009,6 +1017,19 @@ export const ProductsConfiguration: React.FC = () => {
       });
     }
 
+    if ((selectedProduct.isInsuranceProduct || '') !== detailIsInsuranceProduct) {
+      newAuditsList.push({
+        id: `AUD-P-${Date.now()}-5`,
+        eventType: 'Configuration Change',
+        changedField: 'Is Insurance Product',
+        oldValue: selectedProduct.isInsuranceProduct || '(none)',
+        newValue: detailIsInsuranceProduct || '(none)',
+        changedBy: 'System Admin',
+        changedOn: timestamp,
+        productName: detailName.trim()
+      });
+    }
+
     if (newAuditsList.length > 0) {
       setProductAudits(prev => [...newAuditsList, ...prev]);
     }
@@ -1022,6 +1043,7 @@ export const ProductsConfiguration: React.FC = () => {
           group: detailGroup,
           gmiProductGroup: detailGmiProductGroup,
           appliedCompanyType: detailCompanyType,
+          isInsuranceProduct: detailIsInsuranceProduct || undefined,
           salesCreditRule: detailSalesCreditRule,
           vendorFields: detailVendorFields,
           premiumFields: detailPremiumFields,
@@ -2248,13 +2270,15 @@ export const ProductsConfiguration: React.FC = () => {
                         </div>
                         <select
                           value={detailTeam}
-                          onChange={(e) => setDetailTeam(e.target.value)}
-                          className="w-full text-xs px-2.5 py-2 border rounded-lg border-gray-300 bg-white focus:border-orange-500 outline-none font-semibold"
+                          onChange={(e) => { setDetailTeam(e.target.value); setSaveErrors(prev => ({ ...prev, team: undefined })); }}
+                          className={`w-full text-xs px-2.5 py-2 border rounded-lg bg-white focus:border-orange-500 outline-none font-semibold ${saveErrors.team ? 'border-red-400' : 'border-gray-300'}`}
                         >
+                          <option value="">Please select</option>
                           {productTeams.map((team, idx) => (
                             <option key={idx} value={team}>{team}</option>
                           ))}
                         </select>
+                        {saveErrors.team && <p className="mt-1 text-[11px] text-red-500 font-semibold">{saveErrors.team}</p>}
                       </div>
 
                       <div>
@@ -2276,13 +2300,15 @@ export const ProductsConfiguration: React.FC = () => {
                         </div>
                         <select
                           value={detailGroup}
-                          onChange={(e) => setDetailGroup(e.target.value)}
-                          className="w-full text-xs px-2.5 py-2 border rounded-lg border-gray-300 bg-white focus:border-orange-500 outline-none font-semibold"
+                          onChange={(e) => { setDetailGroup(e.target.value); setSaveErrors(prev => ({ ...prev, group: undefined })); }}
+                          className={`w-full text-xs px-2.5 py-2 border rounded-lg bg-white focus:border-orange-500 outline-none font-semibold ${saveErrors.group ? 'border-red-400' : 'border-gray-300'}`}
                         >
+                          <option value="">Please select</option>
                           {productGroups.map((group, idx) => (
                             <option key={idx} value={group}>{group}</option>
                           ))}
                         </select>
+                        {saveErrors.group && <p className="mt-1 text-[11px] text-red-500 font-semibold">{saveErrors.group}</p>}
                       </div>
 
                       <div>
@@ -2303,13 +2329,15 @@ export const ProductsConfiguration: React.FC = () => {
                         </div>
                         <select
                           value={detailGmiProductGroup}
-                          onChange={(e) => setDetailGmiProductGroup(e.target.value)}
-                          className="w-full text-xs px-2.5 py-2 border rounded-lg border-gray-300 bg-white focus:border-orange-500 outline-none font-semibold cursor-pointer"
+                          onChange={(e) => { setDetailGmiProductGroup(e.target.value); setSaveErrors(prev => ({ ...prev, gmiProductGroup: undefined })); }}
+                          className={`w-full text-xs px-2.5 py-2 border rounded-lg bg-white focus:border-orange-500 outline-none font-semibold cursor-pointer ${saveErrors.gmiProductGroup ? 'border-red-400' : 'border-gray-300'}`}
                         >
+                          <option value="">Please select</option>
                           {gmiGroupsMaster.filter(g => g.status === 'Active').map((grp) => (
                             <option key={grp.id} value={grp.name}>{grp.name}</option>
                           ))}
                         </select>
+                        {saveErrors.gmiProductGroup && <p className="mt-1 text-[11px] text-red-500 font-semibold">{saveErrors.gmiProductGroup}</p>}
                       </div>
 
                       <div>
@@ -2353,6 +2381,37 @@ export const ProductsConfiguration: React.FC = () => {
                           </label>
                         </div>
                       </div>
+
+                      {detailCompanyType === 'Individual' && (
+                        <div className="md:col-span-2">
+                          <label className="text-[10px] font-black uppercase text-gray-400 block mb-1.5">
+                            Is Insurance Product <span className="text-red-500">*</span>
+                          </label>
+                          <div className="flex items-center gap-5 pt-1">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="isInsuranceProduct"
+                                checked={detailIsInsuranceProduct === 'Yes'}
+                                onChange={() => { setDetailIsInsuranceProduct('Yes'); setSaveErrors(prev => ({ ...prev, isInsuranceProduct: undefined })); }}
+                                className="w-4 h-4 text-orange-600 border-gray-300 focus:ring-0 cursor-pointer"
+                              />
+                              <span className="text-xs text-gray-700">Yes</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="isInsuranceProduct"
+                                checked={detailIsInsuranceProduct === 'No'}
+                                onChange={() => { setDetailIsInsuranceProduct('No'); setSaveErrors(prev => ({ ...prev, isInsuranceProduct: undefined })); }}
+                                className="w-4 h-4 text-orange-600 border-gray-300 focus:ring-0 cursor-pointer"
+                              />
+                              <span className="text-xs text-gray-700">No</span>
+                            </label>
+                          </div>
+                          {saveErrors.isInsuranceProduct && <p className="mt-1 text-[11px] text-red-500 font-semibold">{saveErrors.isInsuranceProduct}</p>}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -2370,15 +2429,17 @@ export const ProductsConfiguration: React.FC = () => {
                       </label>
                       <select
                         value={detailSalesCreditRule}
-                        onChange={(e) => setDetailSalesCreditRule(e.target.value)}
-                        className="w-full text-xs px-2.5 py-2 border rounded-lg border-gray-300 bg-white focus:border-orange-500 outline-none font-semibold"
+                        onChange={(e) => { setDetailSalesCreditRule(e.target.value); setSaveErrors(prev => ({ ...prev, salesCreditRule: undefined })); }}
+                        className={`w-full text-xs px-2.5 py-2 border rounded-lg bg-white focus:border-orange-500 outline-none font-semibold ${saveErrors.salesCreditRule ? 'border-red-400' : 'border-gray-300'}`}
                       >
+                        <option value="">Please select</option>
                         <option value="Formula 1">Formula 1: Direct Commission split</option>
                         <option value="Formula 2">Formula 2: Team Pool allocation</option>
                         <option value="Formula 3">Formula 3: Individual Sales volume incentive</option>
                         <option value="Formula 4">Formula 4: Dynamic Revenue tier</option>
                         <option value="Formula 6">Formula 6: Custom Project share ratio</option>
                       </select>
+                      {saveErrors.salesCreditRule && <p className="mt-1 text-[11px] text-red-500 font-semibold">{saveErrors.salesCreditRule}</p>}
                     </div>
                   </div>
 
