@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  ArrowLeft, Save, MoreVertical, CheckCircle2, Clock, AlertCircle, FileText, 
-  PieChart, Settings, Zap, TrendingUp, BarChart2, Users, Building2, DollarSign, 
+  ArrowLeft, Save, MoreVertical, CheckCircle2, AlertCircle, FileText,
+  PieChart, Settings, TrendingUp, BarChart2, Users, Building2, DollarSign,
   Calendar, Thermometer, ShieldCheck, Plus, Trash2, Download, Share2, 
   XCircle, History, FileCode, Check, Send, Upload, FileUp,
-  Info, Activity as ActivityIcon, Edit, Copy, User, HelpCircle, Briefcase,
+  Info, Activity as ActivityIcon, Edit, User, HelpCircle, Briefcase,
   ChevronRight, Layers, FileSpreadsheet, Star, Play, Award, ClipboardCheck,
   RefreshCw
 } from 'lucide-react';
@@ -103,6 +103,28 @@ interface ChildProposal {
   renewDate?: string;
   loadedBenefits?: string[];
   loadedCoverages?: string[];
+  // Basic Information (Summary) fields
+  industry?: string;
+  classOfProtection?: string;
+  internalReference?: string;
+  clientDiscountAmount?: number;
+  endDate?: string;
+  salesCode?: string;
+  salesPercentage?: number;
+  // Top KPI header fields
+  presentIncurredAmount?: number;
+  presentPaidAmount?: number;
+  previousIncurredAmount?: number;
+  previousPaidAmount?: number;
+  // Premium tab fields
+  premiumType?: string;
+  premiumAdjustment?: number;
+  proposalPremium?: number;
+  premiumBreakdown?: { employeeClass: string; gmCategory: string; premium: number; employee: number; spouse: number; children: number; other: number }[];
+  benefitPremiums?: { benefit: string; customerCategory: string; perPlanPremium: number }[];
+  // Renewal History (Expired Policy) fields
+  expiryDate?: string;
+  billingMethod?: string;
 }
 
 // Master lists for resolution inside Proposal
@@ -417,10 +439,6 @@ const CONFIG_PRODUCTS = CONFIG_PRODUCT_NAMES.map(name => ({
 }));
 
 export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack, onSave }) => {
-  // Modal dialog states
-  const [showGenerateModal, setShowGenerateModal] = useState(false);
-  const [newProposalName, setNewProposalName] = useState('');
-  const [newProposalLocationType, setNewProposalLocationType] = useState('Hong Kong');
 
   // Helper to get assigned GMI Product Group of productItem from config
   const getAssignedGmiProductGroup = (productItemName: string) => {
@@ -575,7 +593,29 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
       debitNoteNo: 'DN-DEMO-001',
       policyStatus: 'Active',
       loadedBenefits: ['Critical Illness Benefit', 'Major Medical Coverage'],
-      loadedCoverages: ['Worldwide', 'Worldwide (excluding US)']
+      loadedCoverages: ['Worldwide', 'Worldwide (excluding US)'],
+      industry: 'Entertainment and Media',
+      classOfProtection: 'Statutory',
+      internalReference: 'Gain Miles Billing',
+      clientDiscountAmount: 0,
+      endDate: '2027-04-30',
+      salesCode: 'SR-A01',
+      salesPercentage: 100,
+      presentIncurredAmount: 0,
+      presentPaidAmount: 0,
+      previousIncurredAmount: 0,
+      previousPaidAmount: 0,
+      premiumType: 'Per Rate',
+      premiumAdjustment: 0,
+      proposalPremium: 145000,
+      premiumBreakdown: [
+        { employeeClass: 'Key Executive', gmCategory: '1', premium: 90000, employee: 8, spouse: 2, children: 1, other: 0 },
+        { employeeClass: 'Supervisory Staff', gmCategory: '2', premium: 35000, employee: 12, spouse: 3, children: 2, other: 0 },
+        { employeeClass: 'General Staff', gmCategory: '3', premium: 20000, employee: 25, spouse: 5, children: 3, other: 0 },
+      ],
+      benefitPremiums: [{ benefit: 'GROUP MEDICAL INSURANCE', customerCategory: '1', perPlanPremium: 145000 }],
+      expiryDate: '2027-04-30',
+      billingMethod: 'Gain Miles Billing'
     },
     {
       id: 'P-2026-0002',
@@ -605,7 +645,25 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
       benefitType: 'Co-Share',
       finalizedDate: '',
       debitNoteNo: '',
-      policyStatus: ''
+      policyStatus: '',
+      industry: 'Retail',
+      classOfProtection: 'Voluntary',
+      internalReference: 'Direct Billing',
+      clientDiscountAmount: 500,
+      endDate: '2027-04-30',
+      salesCode: 'SR-A01',
+      salesPercentage: 100,
+      presentIncurredAmount: 0,
+      presentPaidAmount: 0,
+      previousIncurredAmount: 0,
+      previousPaidAmount: 0,
+      premiumType: 'Per Rate',
+      premiumAdjustment: 0,
+      proposalPremium: 128000,
+      premiumBreakdown: [{ employeeClass: 'General Staff', gmCategory: '1', premium: 128000, employee: 40, spouse: 6, children: 4, other: 0 }],
+      benefitPremiums: [{ benefit: 'GROUP MEDICAL INSURANCE', customerCategory: '1', perPlanPremium: 128000 }],
+      expiryDate: '2027-04-30',
+      billingMethod: 'Direct Billing'
     }
   ]);
 
@@ -967,7 +1025,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
 
   // Navigations state
   const [activeProspectTab, setActiveProspectTab] = useState<'Opportunity' | 'Proposal'>('Opportunity');
-  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'proposal' | 'documents' | 'benefits' | 'benchmark' | 'renewal-history'>('proposal');
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'proposal' | 'premium' | 'documents' | 'benefits' | 'benchmark' | 'renewal-history'>('proposal');
   const [previewingDoc, setPreviewingDoc] = useState<any | null>(null);
   const [benchmarkFilter, setBenchmarkFilter] = useState<'Provider' | 'Premium' | 'Benefit' | 'Coverage'>('Provider');
 
@@ -980,8 +1038,8 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
 
   // Document Upload State
   const [documents, setDocuments] = useState([
-    { id: 'D1', name: 'demo_quotation.pdf', category: 'Quotation', date: '2026-03-25', size: '2.4 MB' },
-    { id: 'D2', name: 'sample_benefit_comparison.pdf', category: 'Proposal Documents', date: '2026-04-01', size: '1.8 MB' }
+    { id: 'D1', name: 'demo_quotation.pdf', category: 'Bills and Policy Doc.', date: '2026-03-25', size: '2.4 MB' },
+    { id: 'D2', name: 'sample_benefit_comparison.pdf', category: 'Correspondence', date: '2026-04-01', size: '1.8 MB' }
   ]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -991,6 +1049,47 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
     { id: 'A1', action: 'Proposal v1.0 Created', user: 'Sales Rep A', date: '2026-03-25 10:00', details: 'Initialized from standard group medical template.' },
     { id: 'A2', action: 'MCR Validation Approved', user: 'System', date: '2026-04-01 11:15', details: 'Validated against HK MCR regulations successfully.' }
   ]);
+
+  // Proposal Workspace: view/edit toggle + audit history modal
+  const [isProposalEditMode, setIsProposalEditMode] = useState(false);
+  const [showAuditHistory, setShowAuditHistory] = useState(false);
+
+  const downloadTextFile = (filename: string, content: string) => {
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportMcrReport = (child: ChildProposal) => {
+    const content = [
+      'MCR Report',
+      `Proposal: ${child.id} - ${child.name}`,
+      `Product: ${child.productItem || ''}`,
+      `MCR: ${(proposal.mcr * 100).toFixed(1)}%`,
+      `Loss Ratio: ${(proposal.lossRatio * 100).toFixed(1)}%`,
+      `Generated: ${new Date().toISOString()}`,
+    ].join('\n');
+    downloadTextFile(`MCR_Report_${child.id}.txt`, content);
+  };
+
+  const handleDownloadSobReport = (child: ChildProposal) => {
+    const content = [
+      'Schedule of Benefits',
+      `Proposal: ${child.id} - ${child.name}`,
+      `Product: ${child.productItem || ''}`,
+      'Benefits:',
+      ...(child.loadedBenefits || []).map(b => `- ${b}`),
+      'Coverages:',
+      ...(child.loadedCoverages || []).map(c => `- ${c}`),
+    ].join('\n');
+    downloadTextFile(`SOB_Report_${child.id}.txt`, content);
+  };
 
   // Save changes to opportunity
   const handleSaveOpportunity = () => {
@@ -1011,61 +1110,6 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
   };
 
   // Create new child proposal
-  const handleCreateProposal = () => {
-    const code = `P-2026-000${childProposals.length + 1}`;
-    const assignedGmiGroup = getAssignedGmiProductGroup(editedOpportunity.productItem);
-    const { benefits, coverages } = resolveBenefitsAndCoverages(assignedGmiGroup);
-
-    const newProp: ChildProposal = {
-      id: code,
-      name: newProposalName || `${editedOpportunity.name} - Option ${String.fromCharCode(65 + childProposals.length)}`,
-      version: 'v1.0',
-      status: 'Draft',
-      vendor: 'AIA',
-      premium: grossAmount,
-      commissionRate: 15,
-      effectiveDate: editedOpportunity.effectiveDate1,
-      createdDate: new Date().toISOString().split('T')[0],
-      lastUpdated: new Date().toISOString().split('T')[0],
-      createdBy: editedOpportunity.salesRep1,
-      updatedBy: editedOpportunity.salesRep1,
-      summary: `New custom insurance scheme option inheriting ${editedOpportunity.productItem} (${editedOpportunity.productCategory}).`,
-      locationType: newProposalLocationType,
-      productTeam: editedOpportunity.productTeam,
-      productCategory: editedOpportunity.productCategory,
-      productItem: editedOpportunity.productItem,
-      gmiProductGroup: assignedGmiGroup,
-      loadedBenefits: benefits,
-      loadedCoverages: coverages,
-      selectedProducts: [],
-      standardPremium: grossAmount,
-      premiumFrequency: 'Annual',
-      currency: 'HKD'
-    };
-
-    setChildProposals([...childProposals, newProp]);
-    setShowGenerateModal(false);
-    // Open the workspace of the newly created proposal automatically for maximum usability
-    setSelectedChild(newProp);
-    setActiveWorkspaceTab('proposal');
-  };
-
-  // Duplicate / Clone Proposal
-  const handleCloneProposal = (propToClone: ChildProposal) => {
-    const code = `P-2026-000${childProposals.length + 1}`;
-    const cloned: ChildProposal = {
-      ...propToClone,
-      id: code,
-      name: `${propToClone.name} (Cloned Draft)`,
-      version: `v${(parseFloat(propToClone.version.substring(1)) + 0.1).toFixed(1)}`,
-      status: 'Draft',
-      createdDate: new Date().toISOString().split('T')[0],
-      lastUpdated: new Date().toISOString().split('T')[0],
-    };
-    setChildProposals([...childProposals, cloned]);
-    alert(`Cloned proposal successfully as ${code}!`);
-  };
-
   // Renewal Proposal Creator
   const handleRenewProposal = (propToRenew: ChildProposal) => {
     const nextNum = childProposals.length + 1;
@@ -1104,14 +1148,6 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
     setSelectedChild(renewed);
     setActiveWorkspaceTab('proposal');
     alert(`Renewed proposal created: ${code} linked from ${propToRenew.id}. Switched to new proposal workspace.`);
-  };
-
-  // Set selected proposal version as current active version
-  const handleSetCurrentVersion = (propId: string) => {
-    setChildProposals(prev => prev.map(item => ({
-      ...item,
-      isCurrent: item.id === propId
-    })));
   };
 
   // Convert Proposal to Policy
@@ -1176,7 +1212,13 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveProspectTab(tab.id)}
+                  onClick={() => {
+                    if (tab.id === 'Proposal') {
+                      setSelectedChild(childProposals.find(p => p.isCurrent) || childProposals[0] || null);
+                      setActiveWorkspaceTab('proposal');
+                    }
+                    setActiveProspectTab(tab.id);
+                  }}
                   id={`tab-${tab.id.toLowerCase()}`}
                   className={`px-5 py-3 text-xs font-bold transition-all relative flex items-center gap-2 whitespace-nowrap ${
                     activeProspectTab === tab.id 
@@ -1191,8 +1233,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
             })}
           </div>
 
-          {activeProspectTab === 'Opportunity' ? (
-            <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-6">
 
               {/* Title + Edit controls */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1589,89 +1630,6 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
             </div>
 
             </div>
-          ) : (
-            /* Proposal (Proposal List) */
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-              <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                <div>
-                  <h3 className="text-xs font-bold text-gray-900 uppercase tracking-wider">Proposal List</h3>
-                  <p className="text-[10px] text-gray-500 mt-0.5">Manage quotation options. Clicking a proposal code opens the standalone Proposal Workspace.</p>
-                </div>
-                <button 
-                  onClick={() => {
-                    setNewProposalName(`${editedOpportunity.name} - Option ${String.fromCharCode(65 + childProposals.length)}`);
-                    setNewProposalLocationType('Hong Kong');
-                    setShowGenerateModal(true);
-                  }} 
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded flex items-center gap-1 text-xs font-bold transition-all shadow-sm"
-                >
-                  <Plus size={12} />
-                  <span>Generate Proposal</span>
-                </button>
-              </div>
-
-              <div className="overflow-x-auto text-xs">
-                <table className="w-full text-xs text-left border-collapse">
-                  <thead className="bg-gray-50 text-[10px] font-bold text-gray-500 uppercase border-b">
-                    <tr>
-                      <th className="px-4 py-2.5">Proposal Code</th>
-                      <th className="px-4 py-2.5">Option Name</th>
-                      <th className="px-4 py-2.5">Version</th>
-                      <th className="px-4 py-2.5">Status</th>
-                      <th className="px-4 py-2.5">Created Date</th>
-                      <th className="px-4 py-2.5">Last Updated</th>
-                      <th className="px-4 py-2.5">Current Version</th>
-                      <th className="px-4 py-2.5 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 font-medium">
-                    {childProposals.map(p => (
-                      <tr key={p.id} onClick={() => { setSelectedChild(p); setActiveWorkspaceTab('proposal'); }} className="hover:bg-orange-50/15 cursor-pointer transition-colors">
-                        <td className="px-4 py-3 font-mono font-bold text-blue-600 hover:underline">{p.id}</td>
-                        <td className="px-4 py-3 font-semibold text-gray-900 hover:text-orange-600">{p.name}</td>
-                        <td className="px-4 py-3 text-gray-500 font-mono">{p.version}</td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-0.5 border text-[9px] font-bold rounded uppercase tracking-wider ${
-                            p.status === 'Converted to Policy' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                            p.status === 'Approved' ? 'bg-green-50 text-green-700 border-green-200' :
-                            p.status === 'Pending Internal Approval' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                            'bg-gray-50 text-gray-600 border-gray-200'
-                          }`}>{p.status}</span>
-                        </td>
-                        <td className="px-4 py-3 text-gray-400 font-mono">{p.createdDate || '2026-03-25'}</td>
-                        <td className="px-4 py-3 text-gray-400 font-mono">{p.lastUpdated}</td>
-                        <td className="px-4 py-3">
-                          {p.isCurrent ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm">
-                              <CheckCircle2 size={10} className="text-emerald-600" />
-                              <span>Current Version</span>
-                            </span>
-                          ) : (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSetCurrentVersion(p.id);
-                              }}
-                              className="px-2 py-0.5 bg-gray-50 text-gray-600 hover:bg-orange-50 hover:text-orange-600 border border-gray-200 hover:border-orange-200 rounded text-[9px] font-bold transition-all"
-                            >
-                              Set Current
-                            </button>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
-                          <div className="flex justify-end gap-1.5">
-                            <button onClick={() => { setSelectedChild(p); setActiveWorkspaceTab('proposal'); }} className="px-2 py-0.5 bg-blue-50 text-blue-600 hover:bg-blue-100 font-bold rounded text-[10px]">Open</button>
-                            <button onClick={() => handleCloneProposal(p)} className="px-2 py-0.5 bg-gray-50 text-gray-600 hover:bg-gray-100 font-bold rounded text-[10px]">Clone</button>
-                            <button onClick={() => handleRenewProposal(p)} className="px-2 py-0.5 bg-purple-50 text-purple-600 hover:bg-purple-100 font-bold rounded text-[10px]">Renew</button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
         </div>
       ) : (
         // ==========================================
@@ -1681,8 +1639,8 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
           {/* Top Status Chevron Progress Bar (Odoo 19 Style) */}
           <div className="bg-white border border-gray-200 rounded-lg shadow-sm flex flex-col md:flex-row md:items-center justify-between p-3 gap-3">
             <div className="flex items-center gap-3">
-              <button 
-                onClick={() => setSelectedChild(null)} 
+              <button
+                onClick={() => { setSelectedChild(null); setActiveProspectTab('Opportunity'); }}
                 className="p-1.5 hover:bg-gray-100 rounded border border-gray-200 bg-white text-gray-500 flex items-center justify-center transition-colors"
                 title="Back to Opportunity"
               >
@@ -1740,25 +1698,47 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
             </div>
           </div>
 
-          {/* Action Ribbon & Quick Metadata Card */}
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4 grid grid-cols-1 md:grid-cols-5 gap-4">
-            <div className="md:col-span-3 flex flex-wrap items-center gap-2">
-              <button 
-                onClick={() => handleCloneProposal(selectedChild)} 
+          {/* Action Ribbon */}
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setShowAuditHistory(true)}
                 className="px-3 py-1.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 rounded font-bold transition-all flex items-center gap-1.5"
               >
-                <Copy size={13} />
-                <span>Duplicate Version</span>
+                <History size={13} />
+                <span>View Audit History</span>
               </button>
-              {(selectedChild.status === 'Finalized' || selectedChild.status === 'Converted to Policy' || selectedChild.policyId) && (
-                <button 
-                  onClick={() => handleRenewProposal(selectedChild)} 
-                  className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 rounded font-bold transition-all flex items-center gap-1.5"
+              {isProposalEditMode ? (
+                <button
+                  onClick={() => setIsProposalEditMode(false)}
+                  className="px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded font-bold transition-all shadow-sm flex items-center gap-1.5"
                 >
-                  <RefreshCw size={13} />
-                  <span>Renew Proposal</span>
+                  <Check size={13} />
+                  <span>Done Editing</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => setIsProposalEditMode(true)}
+                  className="px-3 py-1.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 rounded font-bold transition-all flex items-center gap-1.5"
+                >
+                  <Edit size={13} />
+                  <span>Edit</span>
                 </button>
               )}
+              <button
+                onClick={() => handleExportMcrReport(selectedChild)}
+                className="px-3 py-1.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 rounded font-bold transition-all flex items-center gap-1.5"
+              >
+                <FileSpreadsheet size={13} />
+                <span>Export MCR Report</span>
+              </button>
+              <button
+                onClick={() => handleDownloadSobReport(selectedChild)}
+                className="px-3 py-1.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 rounded font-bold transition-all flex items-center gap-1.5"
+              >
+                <Download size={13} />
+                <span>Download SOB Report</span>
+              </button>
               {selectedChild.status === 'Approved' && (
                 <button 
                   onClick={() => handleConvertToPolicy(selectedChild)} 
@@ -1774,15 +1754,50 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                 </div>
               )}
             </div>
+          </div>
 
-            <div className="md:col-span-2 grid grid-cols-2 gap-4 text-[10px] border-t md:border-t-0 md:border-l border-gray-200 pt-3 md:pt-0 md:pl-4 font-mono">
+          {/* KPI Strip */}
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 font-mono">
+            <div className="flex items-start gap-2">
+              <Users size={16} className="text-gray-400 shrink-0 mt-0.5" />
               <div>
-                <span className="text-gray-400 font-bold block uppercase tracking-wider">Gross Premium</span>
-                <span className="font-bold text-gray-900 text-xs">HK${selectedChild.premium.toLocaleString()}</span>
+                <span className="text-gray-400 font-bold block uppercase tracking-wider text-[10px] font-sans">EBP Name</span>
+                <span className="font-bold text-gray-900 text-xs">{selectedChild.name}</span>
               </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <DollarSign size={16} className="text-gray-400 shrink-0 mt-0.5" />
               <div>
-                <span className="text-gray-400 font-bold block uppercase tracking-wider">Estimated Revenue</span>
-                <span className="font-bold text-blue-600 text-xs">HK$ {Math.round(selectedChild.premium * (selectedChild.commissionRate / 100)).toLocaleString()} ({selectedChild.commissionRate}%)</span>
+                <span className="text-gray-400 font-bold block uppercase tracking-wider text-[10px] font-sans">Total Premium</span>
+                <span className="font-bold text-gray-900 text-xs">{selectedChild.currency} {selectedChild.premium.toLocaleString()}</span>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <Briefcase size={16} className="text-gray-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="text-gray-400 font-bold block uppercase tracking-wider text-[10px] font-sans">Present Incurred Amount</span>
+                <span className="font-bold text-gray-900 text-xs">HK$ {(selectedChild.presentIncurredAmount || 0).toLocaleString()}</span>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <ShieldCheck size={16} className="text-gray-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="text-gray-400 font-bold block uppercase tracking-wider text-[10px] font-sans">Present Paid Amount</span>
+                <span className="font-bold text-gray-900 text-xs">HK$ {(selectedChild.presentPaidAmount || 0).toLocaleString()}</span>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <History size={16} className="text-gray-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="text-gray-400 font-bold block uppercase tracking-wider text-[10px] font-sans">Previous Incurred Amount</span>
+                <span className="font-bold text-gray-900 text-xs">HK$ {(selectedChild.previousIncurredAmount || 0).toLocaleString()}</span>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <RefreshCw size={16} className="text-gray-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="text-gray-400 font-bold block uppercase tracking-wider text-[10px] font-sans">Previous Paid Amount</span>
+                <span className="font-bold text-gray-900 text-xs">HK$ {(selectedChild.previousPaidAmount || 0).toLocaleString()}</span>
               </div>
             </div>
           </div>
@@ -1795,9 +1810,10 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                 <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest block px-2.5 py-1.5">Quotation Steps</span>
                 
                 {([
-                  { id: 'proposal', label: 'Proposal General', icon: Briefcase },
-                  { id: 'documents', label: 'Documents', icon: FileText },
-                  { id: 'benefits', label: 'Benefit Design', icon: Layers },
+                  { id: 'proposal', label: 'Basic Information', icon: Briefcase },
+                  { id: 'premium', label: 'Premium', icon: DollarSign },
+                  { id: 'benefits', label: 'Coverage', icon: Layers },
+                  { id: 'documents', label: 'Filing Service X', icon: FileText },
                   { id: 'benchmark', label: 'Benchmarking', icon: BarChart2 },
                   { id: 'renewal-history', label: 'Renewal History', icon: History }
                 ] as const).map(tab => {
@@ -1831,429 +1847,278 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
 
             {/* Content Area */}
             <div className="flex-1 min-w-0">
-              {/* Tab 1: Proposal General */}
+              {/* Tab 1: Basic Information */}
               {activeWorkspaceTab === 'proposal' && (
                 <div className="space-y-4">
-                  {/* Section A – Proposal Information */}
+                  {/* Basic Info */}
                   <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
                     <div className="flex items-center gap-2 mb-4 border-b border-gray-100 pb-2">
                       <div className="p-1 bg-blue-50 rounded text-blue-600"><Briefcase size={14} /></div>
-                      <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Section A – Proposal Information</h3>
+                      <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Basic Info</h3>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Proposal Code</label>
-                        <input 
-                          type="text" 
-                          value={selectedChild.id} 
-                          disabled
-                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 text-gray-500 font-mono font-bold focus:outline-none cursor-not-allowed" 
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Proposal Name</label>
-                        <input 
-                          type="text" 
-                          value={selectedChild.name} 
-                          onChange={e => setSelectedChild({...selectedChild, name: e.target.value})} 
-                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white font-semibold text-gray-950 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" 
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Proposal Location Type</label>
-                        <select 
-                          value={selectedChild.locationType || 'Hong Kong'} 
-                          onChange={e => setSelectedChild({...selectedChild, locationType: e.target.value})} 
-                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                        >
-                          <option value="Hong Kong">Hong Kong (HQ)</option>
-                          <option value="Macau">Macau Branch</option>
-                          <option value="Mainland China">Mainland China</option>
-                          <option value="Overseas">Overseas Regional</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Opportunity</label>
-                        <input 
-                          type="text" 
-                          value={editedOpportunity.name} 
-                          readOnly
-                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 text-gray-600 focus:outline-none" 
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Customer</label>
-                        <input 
-                          type="text" 
-                          value={editedOpportunity.company} 
-                          readOnly
-                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 text-gray-600 focus:outline-none" 
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Product Team</label>
-                        <input 
-                          type="text" 
-                          value={resolveProductTeam(selectedChild.productItem || '')} 
-                          disabled
-                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 text-gray-500 font-bold focus:outline-none cursor-not-allowed" 
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Product Category</label>
-                        <input 
-                          type="text" 
-                          value={resolveProductCategory(selectedChild.productItem || '')} 
-                          disabled
-                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 text-gray-500 font-bold focus:outline-none cursor-not-allowed" 
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Product Item</label>
-                        <select 
-                          value={selectedChild.productItem || 'Sample Care Gold'} 
-                          onChange={e => {
-                            const selectedItem = e.target.value;
-                            const groupName = getAssignedGmiProductGroup(selectedItem);
-                            const { benefits, coverages } = resolveBenefitsAndCoverages(groupName);
-                            setSelectedChild({
-                              ...selectedChild,
-                              productItem: selectedItem,
-                              productTeam: resolveProductTeam(selectedItem),
-                              productCategory: resolveProductCategory(selectedItem),
-                              gmiProductGroup: groupName,
-                              loadedBenefits: benefits,
-                              loadedCoverages: coverages
-                            });
-                          }} 
-                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-bold focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                        >
-                          {CONFIG_PRODUCT_NAMES.map(pName => (
-                            <option key={pName} value={pName}>{pName}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">GMI Product Group</label>
-                        <input 
-                          type="text" 
-                          value={getAssignedGmiProductGroup(selectedChild.productItem || '')} 
-                          disabled
-                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 text-gray-500 font-bold focus:outline-none cursor-not-allowed" 
-                        />
-                      </div>
-
-                      {/* Imported Benefits & Coverages from GMI Group */}
-                      <div className="md:col-span-2 lg:col-span-3 mt-3 grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-gray-100 pt-4">
-                        <div className="bg-blue-50/40 border border-blue-150 rounded-lg p-3">
-                          <span className="text-[9px] font-black text-blue-800 uppercase tracking-widest block mb-2">Imported Benefits ({activeChildGmiResolution.benefits.length})</span>
-                          {activeChildGmiResolution.benefits.length > 0 ? (
-                            <div className="flex flex-wrap gap-1.5">
-                              {activeChildGmiResolution.benefits.map((bName: string, idx: number) => (
-                                <span key={idx} className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-bold flex items-center gap-1 shadow-2xs">
-                                  <Check size={10} className="text-blue-500 shrink-0" />
-                                  <span>{bName}</span>
-                                </span>
-                              ))}
-                            </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                      <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                          <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Customer</label>
+                          <input type="text" value={editedOpportunity.company} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 cursor-not-allowed outline-none" />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Industry</label>
+                          {isProposalEditMode ? (
+                            <input type="text" value={selectedChild.industry || ''} onChange={e => setSelectedChild({...selectedChild, industry: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
                           ) : (
-                            <p className="text-gray-400 text-[10px] italic">No benefits configured for this GMI group.</p>
+                            <input type="text" value={selectedChild.industry || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 cursor-not-allowed outline-none" />
                           )}
                         </div>
-                        <div className="bg-emerald-50/40 border border-emerald-150 rounded-lg p-3">
-                          <span className="text-[9px] font-black text-emerald-800 uppercase tracking-widest block mb-2">Imported Coverages ({activeChildGmiResolution.coverages.length})</span>
-                          {activeChildGmiResolution.coverages.length > 0 ? (
-                            <div className="flex flex-wrap gap-1.5">
-                              {activeChildGmiResolution.coverages.map((cName: string, idx: number) => (
-                                <span key={idx} className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-[10px] font-bold flex items-center gap-1 shadow-2xs">
-                                  <Check size={10} className="text-emerald-500 shrink-0" />
-                                  <span>{cName}</span>
-                                </span>
-                              ))}
-                            </div>
+                        <div>
+                          <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Class of Protection</label>
+                          {isProposalEditMode ? (
+                            <select value={selectedChild.classOfProtection || 'Statutory'} onChange={e => setSelectedChild({...selectedChild, classOfProtection: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none">
+                              <option value="Statutory">Statutory</option>
+                              <option value="Voluntary">Voluntary</option>
+                            </select>
                           ) : (
-                            <p className="text-gray-400 text-[10px] italic">No coverages configured for this GMI group.</p>
+                            <span className="inline-flex px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-bold uppercase">{selectedChild.classOfProtection || '—'}</span>
+                          )}
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Premium</label>
+                          <input type="text" value={`${selectedChild.currency} ${selectedChild.premium.toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 font-mono font-bold cursor-not-allowed outline-none" />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Linked Policy Number</label>
+                          <input type="text" value={selectedChild.renewedFrom || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 font-mono cursor-not-allowed outline-none" />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Insurer</label>
+                          {isProposalEditMode ? (
+                            <input type="text" value={selectedChild.vendor} onChange={e => setSelectedChild({...selectedChild, vendor: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                          ) : (
+                            <input type="text" value={selectedChild.vendor} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 cursor-not-allowed outline-none" />
+                          )}
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Debit Note No.</label>
+                          {isProposalEditMode ? (
+                            <input type="text" value={selectedChild.debitNoteNo || ''} onChange={e => setSelectedChild({...selectedChild, debitNoteNo: e.target.value})} placeholder="e.g. DN-94811" className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                          ) : (
+                            <input type="text" value={selectedChild.debitNoteNo || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 font-mono cursor-not-allowed outline-none" />
+                          )}
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Internal Reference</label>
+                          {isProposalEditMode ? (
+                            <input type="text" value={selectedChild.internalReference || ''} onChange={e => setSelectedChild({...selectedChild, internalReference: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                          ) : (
+                            <input type="text" value={selectedChild.internalReference || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 cursor-not-allowed outline-none" />
+                          )}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-gray-50/50 border border-gray-200 rounded-lg p-3">
+                          <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1"><DollarSign size={11} /> Commission Rate</span>
+                          {isProposalEditMode ? (
+                            <input type="number" value={selectedChild.commissionRate} onChange={e => setSelectedChild({...selectedChild, commissionRate: Number(e.target.value)})} className="w-full mt-1 px-2 py-1 border border-gray-200 rounded text-sm font-bold text-emerald-700 bg-white focus:border-blue-500 outline-none" />
+                          ) : (
+                            <div className="text-sm font-bold text-emerald-700 mt-1">{selectedChild.commissionRate}%</div>
+                          )}
+                        </div>
+                        <div className="bg-gray-50/50 border border-gray-200 rounded-lg p-3">
+                          <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1"><DollarSign size={11} /> Client Discount Amount</span>
+                          {isProposalEditMode ? (
+                            <input type="number" value={selectedChild.clientDiscountAmount || 0} onChange={e => setSelectedChild({...selectedChild, clientDiscountAmount: Number(e.target.value)})} className="w-full mt-1 px-2 py-1 border border-gray-200 rounded text-sm font-bold text-emerald-700 bg-white focus:border-blue-500 outline-none" />
+                          ) : (
+                            <div className="text-sm font-bold text-emerald-700 mt-1">{selectedChild.currency} {(selectedChild.clientDiscountAmount || 0).toLocaleString()}</div>
+                          )}
+                        </div>
+                        <div className="bg-gray-50/50 border border-gray-200 rounded-lg p-3">
+                          <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1"><Calendar size={11} /> Start Date</span>
+                          {isProposalEditMode ? (
+                            <input type="date" value={selectedChild.effectiveDate} onChange={e => setSelectedChild({...selectedChild, effectiveDate: e.target.value})} className="w-full mt-1 px-2 py-1 border border-gray-200 rounded text-sm font-bold text-gray-900 bg-white font-mono focus:border-blue-500 outline-none" />
+                          ) : (
+                            <div className="text-sm font-bold text-gray-900 mt-1 font-mono">{selectedChild.effectiveDate}</div>
+                          )}
+                        </div>
+                        <div className="bg-gray-50/50 border border-gray-200 rounded-lg p-3">
+                          <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1"><Calendar size={11} /> End Date</span>
+                          {isProposalEditMode ? (
+                            <input type="date" value={selectedChild.endDate || ''} onChange={e => setSelectedChild({...selectedChild, endDate: e.target.value})} className="w-full mt-1 px-2 py-1 border border-gray-200 rounded text-sm font-bold text-gray-900 bg-white font-mono focus:border-blue-500 outline-none" />
+                          ) : (
+                            <div className="text-sm font-bold text-gray-900 mt-1 font-mono">{selectedChild.endDate || '—'}</div>
                           )}
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Section B – Premium */}
+                  {/* Policy Owner Information */}
                   <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
                     <div className="flex items-center gap-2 mb-4 border-b border-gray-100 pb-2">
-                      <div className="p-1 bg-emerald-50 rounded text-emerald-600"><DollarSign size={14} /></div>
-                      <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Section B – Premium</h3>
+                      <div className="p-1 bg-purple-50 rounded text-purple-600"><ShieldCheck size={14} /></div>
+                      <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Policy Owner Information</h3>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 font-sans">
+                    <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
                       <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Standard Premium</label>
-                        <div className="relative">
-                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 font-mono font-bold">$</span>
-                          <input 
-                            type="number" 
-                            value={selectedChild.premium} 
-                            onChange={e => {
-                              const val = Number(e.target.value);
-                              setSelectedChild({
-                                ...selectedChild, 
-                                premium: val,
-                                standardPremium: val
-                              });
-                            }}
-                            className="w-full pl-6 pr-2 py-1.5 border border-gray-200 rounded text-xs bg-white font-mono font-bold text-gray-950 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" 
-                          />
-                        </div>
+                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Policy Number</label>
+                        {isProposalEditMode ? (
+                          <input type="text" value={selectedChild.policyId || ''} onChange={e => setSelectedChild({...selectedChild, policyId: e.target.value})} placeholder="e.g. POL-MEDIA-78321" className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono font-bold focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                        ) : (
+                          <input type="text" value={selectedChild.policyId || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-500 font-mono font-bold cursor-not-allowed outline-none" />
+                        )}
                       </div>
                       <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Premium Frequency</label>
-                        <select 
-                          value={selectedChild.premiumFrequency || 'Annual'} 
-                          onChange={e => setSelectedChild({...selectedChild, premiumFrequency: e.target.value})} 
-                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                        >
-                          <option value="Annual">Annual (Factor x1.0)</option>
-                          <option value="Semi-Annual">Semi-Annual (Factor x2.0)</option>
-                          <option value="Quarterly">Quarterly (Factor x4.0)</option>
-                          <option value="Monthly">Monthly (Factor x12.0)</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Total Premium (calculated)</label>
-                        <div className="relative">
-                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 font-mono font-bold">$</span>
-                          <input 
-                            type="text" 
-                            readOnly
-                            value={Math.round(selectedChild.premium * (
-                              selectedChild.premiumFrequency === 'Monthly' ? 12 : 
-                              selectedChild.premiumFrequency === 'Quarterly' ? 4 : 
-                              selectedChild.premiumFrequency === 'Semi-Annual' ? 2 : 1
-                            )).toLocaleString()} 
-                            className="w-full pl-6 pr-2 py-1.5 border border-gray-200 bg-gray-50 rounded text-xs font-mono font-black text-emerald-700 outline-none" 
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Currency</label>
-                        <select 
-                          value={selectedChild.currency || 'HKD'} 
-                          onChange={e => setSelectedChild({...selectedChild, currency: e.target.value})} 
-                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                        >
-                          <option value="HKD">HKD - Hong Kong Dollar</option>
-                          <option value="USD">USD - United States Dollar</option>
-                          <option value="MOP">MOP - Macau Pataca</option>
-                          <option value="RMB">RMB - Chinese Renminbi</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Section C – Finalization */}
-                  <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
-                    <div className="flex items-center justify-between mb-4 border-b border-gray-100 pb-2">
-                      <div className="flex items-center gap-2">
-                        <div className="p-1 bg-amber-50 rounded text-amber-600"><ClipboardCheck size={14} /></div>
-                        <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Section C – Finalization</h3>
-                      </div>
-                      <div>
-                        <button
-                          onClick={() => {
-                            const today = new Date().toISOString().split('T')[0];
-                            setSelectedChild({
-                              ...selectedChild,
-                              status: 'Finalized',
-                              finalizedDate: today
-                            });
-                            // Log event
-                            setAuditLogs(prev => [
-                              {
-                                id: `A${prev.length + 1}`,
-                                action: 'Proposal Finalized',
-                                user: editedOpportunity.salesRep1,
-                                date: new Date().toISOString().replace('T', ' ').substring(0, 16),
-                                details: `Proposal successfully set to Finalized on ${today}.`
-                              },
-                              ...prev
-                            ]);
-                            alert(`Proposal ${selectedChild.id} has been marked as Finalized!`);
-                          }}
-                          disabled={selectedChild.status === 'Finalized'}
-                          className={`px-4 py-1.5 rounded font-black text-xs transition-all flex items-center gap-1.5 shadow-sm border ${
-                            selectedChild.status === 'Finalized' 
-                              ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                              : 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600'
-                          }`}
-                        >
-                          <CheckCircle2 size={13} />
-                          <span>Go to Finalized</span>
-                        </button>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 font-sans">
-                      <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Proposal Status</label>
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 border text-[10px] font-black rounded uppercase tracking-wider ${
+                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Status</label>
+                        <span className={`inline-flex items-center px-2.5 py-1 border text-[10px] font-black rounded uppercase tracking-wider ${
                           selectedChild.status === 'Converted to Policy' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                          selectedChild.status === 'Finalized' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                           selectedChild.status === 'Approved' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                           'bg-gray-50 text-gray-600 border-gray-200'
-                        }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${
-                            selectedChild.status === 'Converted to Policy' ? 'bg-emerald-500' :
-                            selectedChild.status === 'Finalized' ? 'bg-amber-500' :
-                            selectedChild.status === 'Approved' ? 'bg-blue-500' : 'bg-gray-400'
-                          }`} />
-                          <span>{selectedChild.status}</span>
-                        </span>
+                        }`}>{selectedChild.status}</span>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Sales Code</label>
+                        {isProposalEditMode ? (
+                          <input type="text" value={selectedChild.salesCode || ''} onChange={e => setSelectedChild({...selectedChild, salesCode: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                        ) : (
+                          <input type="text" value={selectedChild.salesCode || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 font-mono cursor-not-allowed outline-none" />
+                        )}
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Sales Name</label>
+                        <input type="text" value={editedOpportunity.salesRep1} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 cursor-not-allowed outline-none" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Sales Percentage</label>
+                        {isProposalEditMode ? (
+                          <input type="number" value={selectedChild.salesPercentage ?? 100} onChange={e => setSelectedChild({...selectedChild, salesPercentage: Number(e.target.value)})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                        ) : (
+                          <input type="text" value={`${selectedChild.salesPercentage ?? 100}%`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 font-mono cursor-not-allowed outline-none" />
+                        )}
                       </div>
                       <div>
                         <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Renew Required</label>
-                        <select 
-                          value={selectedChild.renewRequired || 'No'} 
-                          onChange={e => setSelectedChild({...selectedChild, renewRequired: e.target.value})} 
-                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                        >
-                          <option value="No">No Renewal Needed</option>
-                          <option value="Yes">Yes (Standard)</option>
-                          <option value="Optional">Optional / Review Later</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Benefit Type</label>
-                        <select 
-                          value={selectedChild.benefitType || 'Core Benefit'} 
-                          onChange={e => setSelectedChild({...selectedChild, benefitType: e.target.value})} 
-                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                        >
-                          <option value="Core Benefit">Core Benefit Scheme</option>
-                          <option value="Voluntary">Voluntary Cover</option>
-                          <option value="Co-Share">Co-Share / Co-Pay Option</option>
-                          <option value="Bespoke Rider">Bespoke Wellness Rider</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Finalized Date</label>
-                        <input 
-                          type="date" 
-                          value={selectedChild.finalizedDate || ''} 
-                          onChange={e => setSelectedChild({...selectedChild, finalizedDate: e.target.value})} 
-                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-mono" 
-                        />
+                        {isProposalEditMode ? (
+                          <select
+                            value={selectedChild.renewRequired || 'No'}
+                            onChange={e => setSelectedChild({...selectedChild, renewRequired: e.target.value})}
+                            className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                          >
+                            <option value="No">No</option>
+                            <option value="Yes">Yes</option>
+                            <option value="Optional">Optional</option>
+                          </select>
+                        ) : (
+                          <span className={`inline-flex px-2.5 py-1 border text-[10px] font-black rounded uppercase tracking-wider ${selectedChild.renewRequired === 'Yes' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>{selectedChild.renewRequired || 'No'}</span>
+                        )}
                       </div>
                     </div>
                   </div>
+                </div>
+              )}
 
-                  {/* Section D – Policy Conversion */}
+              {/* Premium */}
+              {activeWorkspaceTab === 'premium' && (
+                <div className="space-y-4">
                   <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
-                    <div className="flex items-center justify-between mb-4 border-b border-gray-100 pb-2">
-                      <div className="flex items-center gap-2">
-                        <div className="p-1 bg-purple-50 rounded text-purple-600"><ShieldCheck size={14} /></div>
-                        <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Section D – Policy Conversion</h3>
-                      </div>
-                      <div>
-                        <button
-                          onClick={() => {
-                            const today = new Date().toISOString().split('T')[0];
-                            const polNum = `POL-MEDIA-${Date.now().toString().slice(-5)}`;
-                            const dnNum = `DN-${Date.now().toString().slice(-5)}`;
-                            setSelectedChild({
-                              ...selectedChild,
-                              status: 'Converted to Policy',
-                              policyId: polNum,
-                              debitNoteNo: dnNum,
-                              policyStatus: 'Active'
-                            });
-                            // Log event
-                            setAuditLogs(prev => [
-                              {
-                                id: `A${prev.length + 1}`,
-                                action: 'Converted to Policy',
-                                user: editedOpportunity.salesRep1,
-                                date: new Date().toISOString().replace('T', ' ').substring(0, 16),
-                                details: `Proposal successfully converted to Policy ${polNum} with Debit Note ${dnNum}.`
-                              },
-                              ...prev
-                            ]);
-                            alert(`Successfully converted proposal ${selectedChild.id} to Policy ${polNum}!`);
-                          }}
-                          className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-black rounded text-xs transition-all flex items-center gap-1.5 shadow-sm border border-blue-700"
-                        >
-                          <Zap size={13} />
-                          <span>Convert to Policy</span>
-                        </button>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-sans">
-                      <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Policy Number</label>
-                        <input 
-                          type="text" 
-                          value={selectedChild.policyId || ''} 
-                          onChange={e => setSelectedChild({...selectedChild, policyId: e.target.value})} 
-                          placeholder="e.g. POL-MEDIA-78321"
-                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono font-bold focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" 
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Debit Note No.</label>
-                        <input 
-                          type="text" 
-                          value={selectedChild.debitNoteNo || ''} 
-                          onChange={e => setSelectedChild({...selectedChild, debitNoteNo: e.target.value})} 
-                          placeholder="e.g. DN-94811"
-                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono font-bold focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" 
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Policy Status</label>
-                        <select 
-                          value={selectedChild.policyStatus || 'Draft'} 
-                          onChange={e => setSelectedChild({...selectedChild, policyStatus: e.target.value})} 
-                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-semibold focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                        >
-                          <option value="Draft">Draft Policy</option>
-                          <option value="Active">Active / In-Force</option>
-                          <option value="Pending Payment">Pending Payment</option>
-                          <option value="Cancelled">Cancelled</option>
-                          <option value="Lapsed">Lapsed</option>
-                        </select>
-                      </div>
+                    <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider mb-4 border-b border-gray-100 pb-2">Premium by Employee Class</h3>
+                    <div className="overflow-x-auto border border-gray-150 rounded">
+                      <table className="w-full text-xs text-left border-collapse">
+                        <thead className="bg-gray-50 text-[10px] font-black text-gray-500 uppercase border-b border-gray-150">
+                          <tr>
+                            <th className="px-3 py-2">Employee Class</th>
+                            <th className="px-3 py-2">GM Category</th>
+                            <th className="px-3 py-2 text-right">Premium</th>
+                            <th className="px-3 py-2 text-right">Employee</th>
+                            <th className="px-3 py-2 text-right">Spouse</th>
+                            <th className="px-3 py-2 text-right">Children</th>
+                            <th className="px-3 py-2 text-right">Other</th>
+                          </tr>
+                        </thead>
+                        <tbody className="font-mono divide-y divide-gray-100">
+                          {(selectedChild.premiumBreakdown || []).map((row, idx) => (
+                            <tr key={idx}>
+                              <td className="px-3 py-2 font-sans font-semibold text-gray-800">{row.employeeClass}</td>
+                              <td className="px-3 py-2">{row.gmCategory}</td>
+                              <td className="px-3 py-2 text-right font-bold text-gray-900">{selectedChild.currency} {row.premium.toLocaleString()}</td>
+                              <td className="px-3 py-2 text-right">{row.employee}</td>
+                              <td className="px-3 py-2 text-right">{row.spouse}</td>
+                              <td className="px-3 py-2 text-right">{row.children}</td>
+                              <td className="px-3 py-2 text-right">{row.other}</td>
+                            </tr>
+                          ))}
+                          <tr className="bg-gray-50 font-bold">
+                            <td className="px-3 py-2 font-sans" colSpan={2}>Total</td>
+                            <td className="px-3 py-2 text-right">{selectedChild.currency} {(selectedChild.premiumBreakdown || []).reduce((s, r) => s + r.premium, 0).toLocaleString()}</td>
+                            <td className="px-3 py-2 text-right">{(selectedChild.premiumBreakdown || []).reduce((s, r) => s + r.employee, 0)}</td>
+                            <td className="px-3 py-2 text-right">{(selectedChild.premiumBreakdown || []).reduce((s, r) => s + r.spouse, 0)}</td>
+                            <td className="px-3 py-2 text-right">{(selectedChild.premiumBreakdown || []).reduce((s, r) => s + r.children, 0)}</td>
+                            <td className="px-3 py-2 text-right">{(selectedChild.premiumBreakdown || []).reduce((s, r) => s + r.other, 0)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
                     </div>
                   </div>
 
-                  {/* Section E – Proposal History */}
-                  <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
-                    <div className="flex items-center gap-2 mb-4 border-b border-gray-100 pb-2">
-                      <div className="p-1 bg-gray-50 rounded text-gray-600"><Clock size={14} /></div>
-                      <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Section E – Proposal History</h3>
+                  <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-5 grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Premium Frequency</label>
+                      {isProposalEditMode ? (
+                        <select value={selectedChild.premiumFrequency || 'Annual'} onChange={e => setSelectedChild({...selectedChild, premiumFrequency: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none">
+                          <option value="Single Premium">Single Premium</option>
+                          <option value="Annual">Annual</option>
+                          <option value="Semi-Annual">Semi-Annual</option>
+                          <option value="Quarterly">Quarterly</option>
+                          <option value="Monthly">Monthly</option>
+                        </select>
+                      ) : (
+                        <span className="inline-flex px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-bold">{selectedChild.premiumFrequency || 'Annual'}</span>
+                      )}
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 font-mono text-[11px] text-gray-700 bg-gray-50/50 p-4 rounded-lg border border-gray-200">
-                      <div>
-                        <span className="text-[9px] font-black text-gray-400 uppercase block font-sans">Version</span>
-                        <span className="font-bold text-gray-900">{selectedChild.version}</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] font-black text-gray-400 uppercase block font-sans">Created Date</span>
-                        <span>{selectedChild.createdDate || '2026-03-25'}</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] font-black text-gray-400 uppercase block font-sans">Created By</span>
-                        <span className="font-bold text-blue-700 font-sans">{selectedChild.createdBy || 'Sales Rep A'}</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] font-black text-gray-400 uppercase block font-sans">Last Updated</span>
-                        <span>{selectedChild.lastUpdated}</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] font-black text-gray-400 uppercase block font-sans">Current Status</span>
-                        <span className="font-bold text-orange-600 font-sans uppercase tracking-widest">{selectedChild.status}</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] font-black text-gray-400 uppercase block font-sans">Linked Policy</span>
-                        <span className="font-bold text-emerald-700">{selectedChild.policyId || 'None'}</span>
-                      </div>
+                    <div>
+                      <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Premium Type</label>
+                      {isProposalEditMode ? (
+                        <select value={selectedChild.premiumType || 'Per Rate'} onChange={e => setSelectedChild({...selectedChild, premiumType: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none">
+                          <option value="Per Rate">Per Rate</option>
+                          <option value="Flat Rate">Flat Rate</option>
+                        </select>
+                      ) : (
+                        <span className="inline-flex px-2.5 py-1 bg-gray-800 text-white rounded text-[10px] font-bold">{selectedChild.premiumType || 'Per Rate'}</span>
+                      )}
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Premium Adjustment</label>
+                      {isProposalEditMode ? (
+                        <input type="number" value={selectedChild.premiumAdjustment || 0} onChange={e => setSelectedChild({...selectedChild, premiumAdjustment: Number(e.target.value)})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                      ) : (
+                        <input type="text" value={`${selectedChild.currency} ${(selectedChild.premiumAdjustment || 0).toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 font-mono cursor-not-allowed outline-none" />
+                      )}
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Proposal Premium</label>
+                      <input type="text" value={`${selectedChild.currency} ${(selectedChild.proposalPremium ?? selectedChild.premium).toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-emerald-700 font-mono font-black cursor-not-allowed outline-none" />
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
+                    <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider mb-4 border-b border-gray-100 pb-2">Premium by Benefit</h3>
+                    <div className="overflow-x-auto border border-gray-150 rounded">
+                      <table className="w-full text-xs text-left border-collapse">
+                        <thead className="bg-gray-50 text-[10px] font-black text-gray-500 uppercase border-b border-gray-150">
+                          <tr>
+                            <th className="px-3 py-2">Benefit</th>
+                            <th className="px-3 py-2">Customer Category</th>
+                            <th className="px-3 py-2 text-right">Per Plan Premium</th>
+                          </tr>
+                        </thead>
+                        <tbody className="font-mono divide-y divide-gray-100">
+                          {(selectedChild.benefitPremiums || []).map((row, idx) => (
+                            <tr key={idx}>
+                              <td className="px-3 py-2 font-sans font-semibold text-gray-800">{row.benefit}</td>
+                              <td className="px-3 py-2">{row.customerCategory}</td>
+                              <td className="px-3 py-2 text-right font-bold text-gray-900">{row.perPlanPremium.toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </div>
@@ -2264,10 +2129,10 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                 <div className="space-y-4">
                   <div className="bg-white p-5 border border-gray-200 rounded-lg shadow-sm">
                     <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2 font-sans">
-                      <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Underwriting & Proposal Documents</h3>
-                      <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[9px] font-bold uppercase tracking-wider">Document Manager</span>
+                      <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Filing Service X</h3>
+                      <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[9px] font-bold uppercase tracking-wider">GUM CSPA Storage</span>
                     </div>
-                    
+
                     {/* File Upload zone with drag & drop and manual selection support */}
                     <div className="border border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50 hover:bg-gray-100 transition-colors relative cursor-pointer group mb-4">
                       <input type="file" onChange={handleUploadFile} className="absolute inset-0 opacity-0 cursor-pointer" disabled={uploading} />
@@ -2291,7 +2156,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                     )}
 
                     <div className="space-y-2">
-                      <h4 className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-2 font-sans">Active Document Archives</h4>
+                      <h4 className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-2 font-sans">Bills and Policy Doc. / Claims / Correspondence</h4>
                       {documents.map(doc => (
                         <div key={doc.id} className="p-3 bg-gray-50 border border-gray-200 rounded flex items-center justify-between text-xs">
                           <div className="flex items-center gap-2.5">
@@ -2590,8 +2455,8 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                       <table className="w-full text-xs text-left border-collapse font-mono">
                         <thead className="bg-gray-50 text-[10px] font-bold text-gray-500 uppercase border-b border-gray-150 font-sans">
                           <tr>
-                            <th className="px-3 py-2 border-r border-gray-150 w-44">Benefit Class Category</th>
-                            <th className="px-3 py-2 border-r border-gray-150 w-52">Specific Benefit Item</th>
+                            <th className="px-3 py-2 border-r border-gray-150 w-44">Category</th>
+                            <th className="px-3 py-2 border-r border-gray-150 w-52">Benefit</th>
                             {plansList.map(plan => (
                               <th key={plan.id} className="px-3 py-2 border-r border-gray-150 text-blue-700 font-extrabold min-w-[120px] bg-blue-50/20">
                                 {plan.name}
@@ -2842,73 +2707,68 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                 <div className="space-y-4">
                   <div className="bg-white p-5 border border-gray-200 rounded-lg shadow-sm">
                     <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
-                      <div className="font-sans">
-                        <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Renewal History Timeline</h3>
-                        <p className="text-[10px] text-gray-400 mt-0.5">Track historical proposal iterations and policy relationships.</p>
-                      </div>
-                      <div>
-                        {/* Renew Proposal Button is visible if already finalized or converted to policy */}
-                        {(selectedChild.status === 'Finalized' || selectedChild.status === 'Converted to Policy' || selectedChild.policyId) ? (
-                          <button
-                            onClick={() => handleRenewProposal(selectedChild)}
-                            className="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-black rounded text-xs transition-all flex items-center gap-1.5 shadow-sm border border-purple-700 font-sans"
-                          >
-                            <RefreshCw size={13} />
-                            <span>Renew Proposal</span>
-                          </button>
-                        ) : (
-                          <div className="text-[10px] text-gray-400 font-sans italic p-1 border border-dashed border-gray-200 rounded">
-                            Finalize or Convert Proposal first to unlock Renew button.
-                          </div>
-                        )}
-                      </div>
+                      <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Expired Policies</h3>
+                      {(selectedChild.status === 'Finalized' || selectedChild.status === 'Converted to Policy' || selectedChild.policyId) && (
+                        <button
+                          onClick={() => handleRenewProposal(selectedChild)}
+                          className="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-black rounded text-xs transition-all flex items-center gap-1.5 shadow-sm border border-purple-700 font-sans"
+                        >
+                          <RefreshCw size={13} />
+                          <span>Renew Proposal</span>
+                        </button>
+                      )}
                     </div>
 
                     <div className="overflow-x-auto border border-gray-150 rounded">
                       <table className="w-full text-xs text-left border-collapse">
                         <thead className="bg-gray-50 text-[10px] font-black text-gray-500 uppercase border-b border-gray-150 font-sans">
                           <tr>
-                            <th className="px-4 py-2.5">Proposal Version</th>
-                            <th className="px-4 py-2.5">Renewed From</th>
-                            <th className="px-4 py-2.5">Renew Date</th>
-                            <th className="px-4 py-2.5">Policy Status</th>
-                            <th className="px-4 py-2.5">Created By</th>
-                            <th className="px-4 py-2.5 text-right font-sans">Action</th>
+                            <th className="px-3 py-2.5">Policy Number</th>
+                            <th className="px-3 py-2.5">Customer</th>
+                            <th className="px-3 py-2.5">Insurer</th>
+                            <th className="px-3 py-2.5">Product</th>
+                            <th className="px-3 py-2.5">Status</th>
+                            <th className="px-3 py-2.5">Effective Date</th>
+                            <th className="px-3 py-2.5">Expiry Date</th>
+                            <th className="px-3 py-2.5 text-right">Premium</th>
+                            <th className="px-3 py-2.5">Billing Method</th>
+                            <th className="px-3 py-2.5">Debit Note No.</th>
+                            <th className="px-3 py-2.5 text-right">Commission Rate.</th>
+                            <th className="px-3 py-2.5 text-right">Commission Fee.</th>
                           </tr>
                         </thead>
-                        <tbody className="font-mono">
+                        <tbody className="font-mono divide-y divide-gray-100">
                           {childProposals.map(p => (
-                            <tr key={p.id} className={`border-b border-gray-150 hover:bg-gray-50/50 transition-colors ${p.id === selectedChild.id ? 'bg-orange-50/10 font-bold' : ''}`}>
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-blue-600 font-bold">{p.id} ({p.version})</span>
-                                  {p.id === selectedChild.id && (
-                                    <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 font-sans text-[9px] font-black rounded uppercase">Current Active</span>
-                                  )}
-                                </div>
+                            <tr key={p.id} className={p.id === selectedChild.id ? 'bg-orange-50/10 font-bold' : ''}>
+                              <td className="px-3 py-2.5">{p.renewedFrom || p.policyId || p.id}</td>
+                              <td className="px-3 py-2.5 font-sans">{editedOpportunity.company}</td>
+                              <td className="px-3 py-2.5">{p.vendor}</td>
+                              <td className="px-3 py-2.5">
+                                <span className="text-orange-600 font-sans font-bold">{p.classOfProtection || '—'}</span>
                               </td>
-                              <td className="px-4 py-3 text-gray-500">{p.renewedFrom || 'Initial'}</td>
-                              <td className="px-4 py-3 text-gray-400">{p.renewDate || p.createdDate || '2026-03-25'}</td>
-                              <td className="px-4 py-3 font-sans">
-                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold border uppercase tracking-wider ${
+                              <td className="px-3 py-2.5 font-sans">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold border uppercase tracking-wider ${
                                   p.status === 'Converted to Policy' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                                   p.status === 'Finalized' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                  'bg-gray-50 text-gray-600 border-gray-200'
-                                }`}>
-                                  <span>{p.policyStatus || p.status}</span>
-                                </span>
+                                  'bg-blue-50 text-blue-700 border-blue-200'
+                                }`}>{p.status}</span>
                               </td>
-                              <td className="px-4 py-3 text-gray-600 font-sans font-medium">{p.createdBy}</td>
-                              <td className="px-4 py-3 text-right font-sans">
-                                <button
-                                  onClick={() => setSelectedChild(p)}
-                                  className="px-2 py-0.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded text-[10px] font-bold text-gray-700 transition-colors"
-                                >
-                                  Switch Workspace
-                                </button>
-                              </td>
+                              <td className="px-3 py-2.5 text-gray-500">{p.effectiveDate}</td>
+                              <td className="px-3 py-2.5 text-gray-500">{p.expiryDate || '—'}</td>
+                              <td className="px-3 py-2.5 text-right font-bold text-gray-900">{p.currency} {p.premium.toLocaleString()}</td>
+                              <td className="px-3 py-2.5 font-sans">{p.billingMethod || '—'}</td>
+                              <td className="px-3 py-2.5">{p.debitNoteNo || '—'}</td>
+                              <td className="px-3 py-2.5 text-right">{p.commissionRate}%</td>
+                              <td className="px-3 py-2.5 text-right">{p.currency} {Math.round(p.premium * (p.commissionRate / 100)).toLocaleString()}</td>
                             </tr>
                           ))}
+                          <tr className="bg-gray-50 font-bold">
+                            <td className="px-3 py-2.5 font-sans" colSpan={7}>Total</td>
+                            <td className="px-3 py-2.5 text-right">{childProposals[0]?.currency} {childProposals.reduce((s, p) => s + p.premium, 0).toLocaleString()}</td>
+                            <td colSpan={2}></td>
+                            <td className="px-3 py-2.5"></td>
+                            <td className="px-3 py-2.5 text-right">{childProposals[0]?.currency} {Math.round(childProposals.reduce((s, p) => s + p.premium * (p.commissionRate / 100), 0)).toLocaleString()}</td>
+                          </tr>
                         </tbody>
                       </table>
                     </div>
@@ -2920,73 +2780,31 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
         </div>
       )}
 
-      {/* Lightweight Generate Proposal Dialog */}
-      {showGenerateModal && (
-        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-gray-200 rounded-xl shadow-2xl max-w-md w-full overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
-            {/* Modal Header */}
+      {/* View Audit History */}
+      {showAuditHistory && (
+        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50" onClick={() => setShowAuditHistory(false)}>
+          <div className="bg-white border border-gray-200 rounded-xl shadow-2xl max-w-lg w-full max-h-[75vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
             <div className="bg-gray-50 border-b border-gray-150 px-5 py-4 flex items-center justify-between">
-              <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">Generate New Proposal</h3>
-              <button 
-                onClick={() => setShowGenerateModal(false)}
+              <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">Audit History</h3>
+              <button
+                onClick={() => setShowAuditHistory(false)}
                 className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-1 rounded-lg transition-colors"
               >
                 <XCircle size={18} />
               </button>
             </div>
-
-            {/* Modal Content Form */}
-            <div className="p-5 space-y-4 text-xs font-sans">
-              <div className="bg-blue-50 border border-blue-150 rounded-lg p-3 text-blue-700 space-y-1">
-                <span className="font-extrabold text-[10px] uppercase tracking-wider flex items-center gap-1.5">
-                  <Info size={12} />
-                  Automatic Inheritance
-                </span>
-                <p className="text-[11px] leading-relaxed">
-                  This proposal inherits all related product configuration, including the assigned <strong>{getAssignedGmiProductGroup(editedOpportunity.productItem)}</strong> product group hierarchy from the selected Product Item (<strong>{editedOpportunity.productItem}</strong>).
-                </p>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-gray-500 uppercase tracking-wider block">Proposal Name</label>
-                <input 
-                  type="text"
-                  value={newProposalName}
-                  onChange={e => setNewProposalName(e.target.value)}
-                  placeholder="Enter custom option name..."
-                  className="w-full px-3 py-2 border border-gray-200 rounded-md text-xs font-semibold text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-gray-500 uppercase tracking-wider block">Proposal Location Type</label>
-                <select 
-                  value={newProposalLocationType}
-                  onChange={e => setNewProposalLocationType(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-md text-xs font-semibold text-gray-800 bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
-                >
-                  <option value="Hong Kong">Hong Kong (HQ)</option>
-                  <option value="Macau">Macau Branch</option>
-                  <option value="Mainland China">Mainland China</option>
-                  <option value="Overseas">Overseas Regional</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="bg-gray-50 border-t border-gray-150 px-5 py-3.5 flex justify-end gap-2">
-              <button 
-                onClick={() => setShowGenerateModal(false)}
-                className="px-3.5 py-1.5 border border-gray-200 rounded text-xs font-bold text-gray-700 bg-white hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={handleCreateProposal}
-                className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-black transition-colors shadow-sm"
-              >
-                Create Proposal
-              </button>
+            <div className="overflow-y-auto divide-y divide-gray-100">
+              {auditLogs.map(log => (
+                <div key={log.id} className="p-4 text-xs">
+                  <div className="flex justify-between items-baseline gap-2">
+                    <span className="font-bold text-gray-800">{log.action}</span>
+                    <span className="text-gray-400 font-mono text-[10px] whitespace-nowrap">{log.date}</span>
+                  </div>
+                  <p className="text-gray-500 mt-1">{log.details}</p>
+                  <p className="text-gray-400 text-[10px] mt-1">By {log.user}</p>
+                </div>
+              ))}
+              {auditLogs.length === 0 && <p className="p-6 text-xs text-gray-400 text-center">No audit history yet.</p>}
             </div>
           </div>
         </div>
