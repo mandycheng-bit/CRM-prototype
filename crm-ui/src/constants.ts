@@ -84,7 +84,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
   {
     id: 'P-10-001',
     name: 'Demo Office Setup',
-    stage: 'Qualification',
+    stage: 'Draft',
     probability: 30,
     expectedRevenueGross: 50000,
     expectedRevenueNet: 45000,
@@ -115,7 +115,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
   {
     id: 'P-QUAL-001',
     name: 'XYZ Corp Startup Plan',
-    stage: 'Qualification',
+    stage: 'Draft',
     probability: 30,
     expectedRevenueGross: 120000,
     expectedRevenueNet: 108000,
@@ -153,7 +153,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
   {
     id: 'P1',
     name: 'Company A Group Medical Plan',
-    stage: 'Proposal Preparation',
+    stage: 'SOB',
     probability: 70,
     expectedRevenueGross: 200000,
     expectedRevenueNet: 180000,
@@ -197,8 +197,8 @@ export const MOCK_PROPOSALS: Proposal[] = [
   {
     id: 'P2',
     name: 'Company B Renewal',
-    stage: 'Negotiation',
-    probability: 90,
+    stage: 'Finalize',
+    probability: 95,
     expectedRevenueGross: 500000,
     expectedRevenueNet: 450000,
     salesRep: 'Sales Rep B',
@@ -237,7 +237,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
   {
     id: 'P-WON-001',
     name: 'DEF Group Life Plan',
-    stage: 'Won',
+    stage: 'Policy',
     probability: 100,
     expectedRevenueGross: 300000,
     expectedRevenueNet: 270000,
@@ -310,8 +310,8 @@ export const MOCK_PROPOSALS: Proposal[] = [
   {
     id: 'P-REN-001',
     name: 'Company B Renewal 2024',
-    stage: 'Proposal Preparation',
-    probability: 70,
+    stage: 'SOB',
+    probability: 75,
     expectedRevenueGross: 550000,
     expectedRevenueNet: 495000,
     salesRep: 'Sales Rep B',

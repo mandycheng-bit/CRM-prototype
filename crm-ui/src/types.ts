@@ -4,7 +4,7 @@ export type ProductType = 'Insurance-Individual' | 'Insurance-Group-EBP' | 'MPF'
 export type PolicyStatus = 'Draft' | 'Active' | 'Renewal Due' | 'Renewed' | 'Lapsed';
 export type MPFStatus = 'Active' | 'Draft' | 'Inactive';
 
-export type ProposalStage = 'Qualification' | 'Proposal Preparation' | 'Negotiation' | 'Won' | 'Lost';
+export type ProposalStage = 'Draft' | 'SOB' | 'Finalize' | 'Policy' | 'Lost';
 export type ActivityType = 'Call' | 'Meeting' | 'Email';
 export type ComplianceStatus = 'Pending' | 'Approved' | 'Rejected' | 'Expired';
 export type RiskLevel = 'Low' | 'Medium' | 'High';
@@ -131,7 +131,7 @@ export interface Proposal {
   initialNotes?: string;
   opportunitySummary?: string;
 
-  // Stage 30% Qualification
+  // Stage 30% Draft
   insurerTentative?: string;
   regionMarket?: string;
   proposalType?: string;
@@ -142,7 +142,7 @@ export interface Proposal {
   qualificationNotes?: string;
   product?: string;
 
-  // Stage 70% Proposal Preparation
+  // Stage 70% SOB
   client?: string;
   insured?: string;
   insurer?: string;
@@ -158,7 +158,7 @@ export interface Proposal {
   requiredDocumentsChecklist?: string[];
   internalReviewStatus?: string;
 
-  // Stage 90% Negotiation
+  // Stage 90% Finalize
   finalQuotedPremium?: number;
   discountCommercialAdjustment?: string;
   commissionPercentage?: number;

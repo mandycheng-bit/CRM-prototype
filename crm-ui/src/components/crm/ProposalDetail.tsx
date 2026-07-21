@@ -3,12 +3,65 @@ import {
   ArrowLeft, Save, MoreVertical, CheckCircle2, Clock, AlertCircle, FileText, 
   PieChart, Settings, Zap, TrendingUp, BarChart2, Users, Building2, DollarSign, 
   Calendar, Thermometer, ShieldCheck, Plus, Trash2, Download, Share2, 
-  ExternalLink, XCircle, History, FileCode, Check, Send, Upload, FileUp, 
+  XCircle, History, FileCode, Check, Send, Upload, FileUp,
   Info, Activity as ActivityIcon, Edit, Copy, User, HelpCircle, Briefcase,
   ChevronRight, Layers, FileSpreadsheet, Star, Play, Award, ClipboardCheck,
   RefreshCw
 } from 'lucide-react';
 import type { Proposal, BenefitRow } from '../../types';
+import { MOCK_COMPANIES, MOCK_INDIVIDUALS, MOCK_LEADS, MOCK_CAMPAIGNS } from '../../constants';
+
+const SALES_REPS = ['Sales Rep A', 'Sales Rep B', 'Sales Rep C', 'Sales Rep D'];
+const SALES_REP_TEAM_MAP: Record<string, string> = {
+  'Sales Rep A': 'Sales Team A',
+  'Sales Rep B': 'Sales Team B',
+  'Sales Rep C': 'Sales Team C',
+  'Sales Rep D': 'Sales Team A',
+};
+const LOSS_REASONS = [
+  'Admin Concern from HR',
+  'Business Closed',
+  'Client Relationship',
+  'Difficult to Arrange Seminar',
+  'Existing Provider Relationship',
+  'Global Appointment',
+  'HR / Contact Person Leave the Company',
+  'Lack of Management Support',
+];
+const NB_PROBABILITY_OPTIONS = [0, 10, 30, 70, 90, 100];
+const RB_PROBABILITY_OPTIONS = [0, 65, 75, 85, 95, 100];
+
+// Company/Individual Master lookup: Lead + Customer (Company/Individual), excluding Archived.
+// Selection is two-step: entityType (Company/Individual) then source (Customer/Lead).
+const COMPANY_INDIVIDUAL_OPTIONS: { id: string; label: string; entityType: 'Company' | 'Individual'; source: 'Customer' | 'Lead' }[] = [
+  ...MOCK_COMPANIES.filter(c => c.status !== 'Archived').map(c => ({ id: c.id, label: c.name, entityType: 'Company' as const, source: 'Customer' as const })),
+  ...MOCK_INDIVIDUALS.filter(i => i.status !== 'Archived').map(i => ({ id: i.id, label: i.fullName, entityType: 'Individual' as const, source: 'Customer' as const })),
+  ...MOCK_LEADS.filter(l => (l.leadStatus as string) !== 'Archived').map(l => ({ id: l.id, label: l.leadName, entityType: l.type, source: 'Lead' as const })),
+];
+const resolveCompanyMeta = (label: string) => {
+  const match = COMPANY_INDIVIDUAL_OPTIONS.find(o => o.label === label);
+  return match ? { entityType: match.entityType, source: match.source } : { entityType: 'Company' as const, source: 'Customer' as const };
+};
+const CAMPAIGN_OPTIONS = MOCK_CAMPAIGNS.filter(c => c.active).map(c => c.name);
+
+// Renders a field's editable control when editing, or a plain read-only value otherwise.
+const FieldView: React.FC<{
+  label: string;
+  required?: boolean;
+  editing: boolean;
+  viewValue: React.ReactNode;
+  className?: string;
+  children: React.ReactNode;
+}> = ({ label, required, editing, viewValue, className, children }) => (
+  <div className={className}>
+    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">
+      {label} {required && <span className="text-red-500">*</span>}
+    </label>
+    {editing ? children : (
+      <p className="text-xs font-semibold text-gray-800 px-2.5 py-1.5 min-h-[30px]">{viewValue}</p>
+    )}
+  </div>
+);
 
 interface ProposalDetailProps {
   proposal: Proposal;
@@ -417,52 +470,32 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
   const initialProductCategory = resolveProductCategory(initialProductItem);
 
   // State for Opportunity Page (Commercial)
-  const [editedOpportunity, setEditedOpportunity] = useState({
+  const buildInitialOpportunity = () => ({
     name: proposal.name,
-    stage: proposal.stage || 'Qualification',
+    stage: proposal.stage || 'Draft',
     probability: proposal.probability || 30,
-    expectedCloseDate: proposal.effectiveDate || '2026-04-01',
-    expectedEffectiveDate: '2026-05-01',
-    opportunityBusiness: 'New Business',
-    grossAmount: proposal.expectedRevenueGross || 150000,
-    estimatedSalesCredit: Math.round((proposal.expectedRevenueGross || 150000) * 0.15),
-    netAmount: Math.round((proposal.expectedRevenueGross || 150000) * 0.92),
+    // Effective Date, captured per stage: Date 1 shown Draft/Finalize/Policy, Date 2 shown Finalize/Policy, Date 3 shown Policy only
+    effectiveDate1: proposal.effectiveDate || '2026-05-01',
+    effectiveDate2: '',
+    effectiveDate3: '',
     // Customer Info
     company: proposal.client || 'DEMO COMPANY CO. LTD.',
-    primaryContact: proposal.contactPerson || 'User C',
-    phone: '+852 0000-1111',
-    email: 'user.c@demo.com',
-    industry: 'Entertainment and Media',
-    existingCustomer: 'No',
-    existingPolicyCount: 0,
-    gumCompany: 'GUM Company Limited',
-    isMacau: 'No',
-    companyOdooId: 'odoo_comp_0001',
     // Product Info
     productTeam: initialProductTeam,
     productCategory: initialProductCategory,
     productItem: initialProductItem,
-    businessType: 'NB',
-    campaign: proposal.campaign || 'Q2 Corporate Outreach',
-    salesTeam: 'Hong Kong Corporate',
+    businessType: proposal.businessType === 'Renewal' ? 'Renewal' : 'NB',
+    campaign: proposal.campaign || CAMPAIGN_OPTIONS[0],
     // Sales Assignment
     salesRep1: proposal.salesRep || 'Sales Rep A',
     split1: 70,
-    salesRep2: 'Sales Rep B',
-    split2: 30,
+    salesRep2: '',
+    split2: 0,
     salesRep3: '',
     split3: 0,
-    teamLeader: 'Sales Rep C',
-    // Marketing
-    medium: 'Direct Referral',
-    source: proposal.source || 'Broker Agent',
-    referredBy: 'Demo Referral Source',
     // Evaluation & Lifecycle
-    leadTemperature: 'Hot',
-    expectedEmployeeCount: 45,
     lossReason: '',
     relationOpptyId: 'OPP-DEMO-0001',
-    gmiProposalLink: 'https://example.com/proposal/DEMO-0001',
     tags: ['Corporate', 'Q2 Outreach'],
     opportunityNotes: proposal.remarks || 'Sample company requested comparison for Ward vs Semi-Private coverage for demo members.',
     // System fields
@@ -470,6 +503,45 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
     createdOn: '2026-03-20 10:15:30',
     opptyStageChangeDate: '2026-04-10 14:22:05',
   });
+  const [editedOpportunity, setEditedOpportunity] = useState(buildInitialOpportunity);
+
+  // Records open in read-only View mode by default; Edit must be explicitly entered
+  const [isEditMode, setIsEditMode] = useState(false);
+
+  // Add Sales Rep: Rep 1 is always shown; up to 2 more can be added (max 3 total)
+  const [numSalesReps, setNumSalesReps] = useState(1);
+  const [tagInput, setTagInput] = useState('');
+
+  // Company / Individual selector: two-step (entityType then source) plus a name search
+  const initialCompanyMeta = resolveCompanyMeta(proposal.client || 'DEMO COMPANY CO. LTD.');
+  const [companyEntityType, setCompanyEntityType] = useState<'Company' | 'Individual'>(initialCompanyMeta.entityType);
+  const [companySource, setCompanySource] = useState<'Customer' | 'Lead'>(initialCompanyMeta.source);
+  const [companySearch, setCompanySearch] = useState('');
+  const filteredCompanyOptions = COMPANY_INDIVIDUAL_OPTIONS.filter(o =>
+    o.entityType === companyEntityType && o.source === companySource && o.label.toLowerCase().includes(companySearch.toLowerCase())
+  );
+  const handleToggleCompanyEntityType = (t: 'Company' | 'Individual') => {
+    setCompanyEntityType(t);
+    setCompanySearch('');
+    const opts = COMPANY_INDIVIDUAL_OPTIONS.filter(o => o.entityType === t && o.source === companySource);
+    setEditedOpportunity(prev => ({ ...prev, company: opts[0]?.label || '' }));
+  };
+  const handleToggleCompanySource = (t: 'Customer' | 'Lead') => {
+    setCompanySource(t);
+    setCompanySearch('');
+    const opts = COMPANY_INDIVIDUAL_OPTIONS.filter(o => o.entityType === companyEntityType && o.source === t);
+    setEditedOpportunity(prev => ({ ...prev, company: opts[0]?.label || '' }));
+  };
+
+  const handleCancelEdit = () => {
+    setEditedOpportunity(buildInitialOpportunity());
+    setNumSalesReps(1);
+    const meta = resolveCompanyMeta(proposal.client || 'DEMO COMPANY CO. LTD.');
+    setCompanyEntityType(meta.entityType);
+    setCompanySource(meta.source);
+    setCompanySearch('');
+    setIsEditMode(false);
+  };
 
   // State for Child Proposals Map
   const [childProposals, setChildProposals] = useState<ChildProposal[]>([
@@ -875,6 +947,12 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
     localStorage.setItem(`pr2_opp_eval_${proposal.id}`, JSON.stringify(values));
   };
 
+  // Gross Amount is read-only, sourced from Product Opportunity Evaluation.
+  // No formula engine exists yet for the per-product "Formula 1/2/3/4" rules, so this
+  // mirrors the proposal's base revenue figure rather than fabricating a calculation.
+  const grossAmount = proposal.expectedRevenueGross || 0;
+  const netAmount = Math.round(grossAmount * (editedOpportunity.probability / 100));
+
   // Listen to any external changes to localStorage for product list
   useEffect(() => {
     const handleStorageChange = () => {
@@ -922,12 +1000,13 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
         name: editedOpportunity.name,
         stage: editedOpportunity.stage as any,
         probability: editedOpportunity.probability,
-        expectedRevenueGross: editedOpportunity.grossAmount,
+        expectedRevenueGross: grossAmount,
         salesRep: editedOpportunity.salesRep1,
         client: editedOpportunity.company,
         remarks: editedOpportunity.opportunityNotes,
       });
     }
+    setIsEditMode(false);
     alert("Opportunity changes saved successfully!");
   };
 
@@ -943,9 +1022,9 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
       version: 'v1.0',
       status: 'Draft',
       vendor: 'AIA',
-      premium: editedOpportunity.grossAmount,
+      premium: grossAmount,
       commissionRate: 15,
-      effectiveDate: editedOpportunity.expectedEffectiveDate,
+      effectiveDate: editedOpportunity.effectiveDate1,
       createdDate: new Date().toISOString().split('T')[0],
       lastUpdated: new Date().toISOString().split('T')[0],
       createdBy: editedOpportunity.salesRep1,
@@ -959,7 +1038,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
       loadedBenefits: benefits,
       loadedCoverages: coverages,
       selectedProducts: [],
-      standardPremium: editedOpportunity.grossAmount,
+      standardPremium: grossAmount,
       premiumFrequency: 'Annual',
       currency: 'HKD'
     };
@@ -1081,22 +1160,11 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
         // ==========================================
         <div className="p-6 max-w-7xl mx-auto w-full flex-1">
           {/* Header */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-200 pb-6 mb-6">
-            <div className="flex items-center gap-4">
-              <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-full border border-gray-200 bg-white shadow-sm text-gray-500">
-                <ArrowLeft size={16} />
-              </button>
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">{editedOpportunity.name}</h1>
-                <p className="text-xs text-gray-500 mt-1">Opportunity Code: <span className="font-mono">{proposal.id}</span> · Customer: {editedOpportunity.company} · Rep: {editedOpportunity.salesRep1}</p>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={handleSaveOpportunity} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5">
-                <Save size={14} />
-                <span>Save Opportunity</span>
-              </button>
-            </div>
+          <div className="flex items-center gap-3 mb-4">
+            <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-full border border-gray-200 bg-white shadow-sm text-gray-500">
+              <ArrowLeft size={16} />
+            </button>
+            <span className="text-xs text-gray-400 font-mono">{proposal.id}</span>
           </div>
           {/* Top Tabs */}
           <div className="flex border-b border-gray-200 mb-6">
@@ -1125,60 +1193,203 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
 
           {activeProspectTab === 'Opportunity' ? (
             <div className="flex flex-col gap-6">
-              
-              {/* 1. Customer Information */}
-            <div className="bg-white p-5 rounded-lg border border-gray-200 shadow-sm">
-              <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-4 border-b border-gray-100 pb-1.5 flex items-center gap-1.5">
-                <Building2 size={14} className="text-orange-500" />
-                Customer Information
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+
+              {/* Title + Edit controls */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Company Name</label>
-                  <input type="text" value={editedOpportunity.company} onChange={e => setEditedOpportunity({...editedOpportunity, company: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500" />
+                  {isEditMode ? (
+                    <input
+                      type="text"
+                      value={editedOpportunity.name}
+                      onChange={e => setEditedOpportunity({...editedOpportunity, name: e.target.value})}
+                      className="text-xl font-bold text-gray-900 bg-transparent border-b-2 border-orange-300 focus:border-orange-500 outline-none px-0.5 -ml-0.5"
+                    />
+                  ) : (
+                    <h1 className="text-xl font-bold text-gray-900">{editedOpportunity.name}</h1>
+                  )}
+                  <p className="text-xs text-gray-500 mt-1">Customer: {editedOpportunity.company} · Rep: {editedOpportunity.salesRep1}</p>
                 </div>
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Company Odoo ID</label>
-                  <input type="text" value={editedOpportunity.companyOdooId} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono outline-none cursor-not-allowed" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Primary Contact</label>
-                  <input type="text" value={editedOpportunity.primaryContact} onChange={e => setEditedOpportunity({...editedOpportunity, primaryContact: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Industry</label>
-                  <input type="text" value={editedOpportunity.industry} onChange={e => setEditedOpportunity({...editedOpportunity, industry: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Phone</label>
-                  <input type="text" value={editedOpportunity.phone} onChange={e => setEditedOpportunity({...editedOpportunity, phone: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 font-mono" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Email</label>
-                  <input type="email" value={editedOpportunity.email} onChange={e => setEditedOpportunity({...editedOpportunity, email: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 font-mono" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Is Macau?</label>
-                  <select value={editedOpportunity.isMacau} onChange={e => setEditedOpportunity({...editedOpportunity, isMacau: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500">
-                    <option value="No">No</option>
-                    <option value="Yes">Yes</option>
-                  </select>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Existing Customer</label>
-                    <select value={editedOpportunity.existingCustomer} onChange={e => setEditedOpportunity({...editedOpportunity, existingCustomer: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500">
-                      <option value="Yes">Yes</option>
-                      <option value="No">No</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Existing Policies</label>
-                    <input type="number" value={editedOpportunity.existingPolicyCount} onChange={e => setEditedOpportunity({...editedOpportunity, existingPolicyCount: Number(e.target.value)})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 font-mono" />
-                  </div>
+                <div className="flex gap-2">
+                  {isEditMode ? (
+                    <>
+                      <button onClick={handleCancelEdit} className="px-4 py-2 bg-white hover:bg-gray-50 border border-gray-200 text-gray-600 rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5">
+                        <span>Cancel</span>
+                      </button>
+                      <button onClick={handleSaveOpportunity} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5">
+                        <Save size={14} />
+                        <span>Save Opportunity</span>
+                      </button>
+                    </>
+                  ) : (
+                    <button onClick={() => setIsEditMode(true)} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5">
+                      <Edit size={14} />
+                      <span>Edit</span>
+                    </button>
+                  )}
                 </div>
               </div>
-            </div>
+
+              {/* Gross Amount / Probability — most prominent element on the page */}
+              <div className="bg-orange-50 border-2 border-orange-200 rounded-xl p-5">
+                <div className="flex items-end gap-4 flex-wrap">
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Gross Amount <span className="text-red-500">*</span></label>
+                    <span className="text-3xl font-black text-gray-900">HK${grossAmount.toLocaleString()}</span>
+                  </div>
+                  <span className="text-xl font-semibold text-gray-400 pb-1.5">at</span>
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Probability <span className="text-red-500">*</span></label>
+                    {isEditMode ? (
+                      <select value={editedOpportunity.probability} onChange={e => setEditedOpportunity({...editedOpportunity, probability: Number(e.target.value)})} className="text-2xl font-black text-gray-900 bg-transparent border-b-2 border-orange-300 focus:border-orange-500 outline-none">
+                        {(() => {
+                          const options = editedOpportunity.businessType === 'Renewal' ? RB_PROBABILITY_OPTIONS : NB_PROBABILITY_OPTIONS;
+                          return (
+                            <>
+                              {!options.includes(editedOpportunity.probability) && (
+                                <option value={editedOpportunity.probability}>{editedOpportunity.probability}% (invalid for {editedOpportunity.businessType === 'Renewal' ? 'RB' : 'NB'})</option>
+                              )}
+                              {options.map(p => (
+                                <option key={p} value={p}>{p}%</option>
+                              ))}
+                            </>
+                          );
+                        })()}
+                      </select>
+                    ) : (
+                      <span className="text-3xl font-black text-gray-900">{editedOpportunity.probability}%</span>
+                    )}
+                  </div>
+                </div>
+                {editedOpportunity.probability === 0 && (
+                  <div className="mt-4 max-w-xs">
+                    <FieldView label="Loss Reason" required editing={isEditMode} viewValue={editedOpportunity.lossReason || '—'}>
+                      <select value={editedOpportunity.lossReason} onChange={e => setEditedOpportunity({...editedOpportunity, lossReason: e.target.value})} className="w-full px-2.5 py-1.5 border border-red-200 bg-red-50/20 rounded text-xs text-red-900 font-semibold">
+                        <option value="">-- Select Loss Reason --</option>
+                        {LOSS_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                      </select>
+                    </FieldView>
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 -mt-2">Net Amount: <span className="font-bold text-gray-700">HK${netAmount.toLocaleString()}</span></p>
+
+              {/* Opportunity Information */}
+              <div className="bg-white p-5 rounded-lg border border-gray-200 shadow-sm">
+                <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-4 border-b border-gray-100 pb-1.5 flex items-center gap-1.5">
+                  <TrendingUp size={14} className="text-orange-500" />
+                  Opportunity Information
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                  <div className="md:col-span-3">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Company / Individual <span className="text-red-500">*</span></label>
+                    {isEditMode ? (
+                      <div className="space-y-1.5">
+                        <div className="flex gap-2">
+                          <div className="flex bg-gray-100 rounded-lg p-1">
+                            {(['Company', 'Individual'] as const).map(t => (
+                              <button key={t} onClick={() => handleToggleCompanyEntityType(t)} className={`px-3 py-1 text-xs font-semibold rounded transition-all ${companyEntityType === t ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>{t}</button>
+                            ))}
+                          </div>
+                          <div className="flex bg-gray-100 rounded-lg p-1">
+                            {(['Customer', 'Lead'] as const).map(t => (
+                              <button key={t} onClick={() => handleToggleCompanySource(t)} className={`px-3 py-1 text-xs font-semibold rounded transition-all ${companySource === t ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>{t}</button>
+                            ))}
+                          </div>
+                        </div>
+                        <input type="text" value={companySearch} onChange={e => setCompanySearch(e.target.value)} placeholder="Search by name..." className="w-full max-w-sm px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50" />
+                        <select value={editedOpportunity.company} onChange={e => setEditedOpportunity({...editedOpportunity, company: e.target.value})} className="w-full max-w-sm px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50">
+                          {!filteredCompanyOptions.some(o => o.label === editedOpportunity.company) && editedOpportunity.company && (
+                            <option value={editedOpportunity.company}>{editedOpportunity.company} (not in {companyEntityType}/{companySource} list)</option>
+                          )}
+                          {filteredCompanyOptions.length === 0 && !editedOpportunity.company && <option value="">No matches</option>}
+                          {filteredCompanyOptions.map(o => <option key={o.id} value={o.label}>{o.label}</option>)}
+                        </select>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 px-2.5 py-1.5">
+                        <span className="text-xs font-semibold text-gray-800">{editedOpportunity.company}</span>
+                        <span className="text-[9px] font-bold uppercase tracking-wide bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{companyEntityType}</span>
+                        <span className="text-[9px] font-bold uppercase tracking-wide bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">{companySource}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Oppty Status</label>
+                    <input type="text" value={editedOpportunity.stage} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-semibold outline-none cursor-not-allowed" />
+                  </div>
+                  <FieldView label="Campaign" required editing={isEditMode} viewValue={editedOpportunity.campaign}>
+                    <select value={editedOpportunity.campaign} onChange={e => setEditedOpportunity({...editedOpportunity, campaign: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50">
+                      {CAMPAIGN_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </FieldView>
+                  <FieldView label="Relation Oppty ID" editing={isEditMode} viewValue={editedOpportunity.relationOpptyId || '—'}>
+                    <input type="text" value={editedOpportunity.relationOpptyId} onChange={e => setEditedOpportunity({...editedOpportunity, relationOpptyId: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs font-mono bg-gray-50" placeholder="Purpose TBD" />
+                  </FieldView>
+                  {['Draft', 'Finalize', 'Policy'].includes(editedOpportunity.stage) && (
+                    <FieldView label="Effective Date 1 (Draft)" editing={isEditMode} viewValue={editedOpportunity.effectiveDate1 || '—'}>
+                      <input type="date" value={editedOpportunity.effectiveDate1} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate1: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
+                    </FieldView>
+                  )}
+                  {['Finalize', 'Policy'].includes(editedOpportunity.stage) && (
+                    <FieldView label="Effective Date 2 (Finalize)" editing={isEditMode} viewValue={editedOpportunity.effectiveDate2 || '—'}>
+                      <input type="date" value={editedOpportunity.effectiveDate2} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate2: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
+                    </FieldView>
+                  )}
+                  {editedOpportunity.stage === 'Policy' && (
+                    <FieldView label="Effective Date 3 (Policy)" editing={isEditMode} viewValue={editedOpportunity.effectiveDate3 || '—'}>
+                      <input type="date" value={editedOpportunity.effectiveDate3} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate3: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
+                    </FieldView>
+                  )}
+                  <div className="md:col-span-3">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Tags</label>
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {editedOpportunity.tags.map((tag, idx) => (
+                        <span key={idx} className="inline-flex items-center gap-1 bg-orange-50 border border-orange-200 text-orange-700 px-2 py-0.5 rounded-full text-[10px] font-semibold">
+                          {tag}
+                          {isEditMode && (
+                            <button onClick={() => setEditedOpportunity({...editedOpportunity, tags: editedOpportunity.tags.filter((_, i) => i !== idx)})} className="hover:text-orange-900">
+                              <XCircle size={11} />
+                            </button>
+                          )}
+                        </span>
+                      ))}
+                      {editedOpportunity.tags.length === 0 && <span className="text-xs text-gray-400">—</span>}
+                    </div>
+                    {isEditMode && (
+                      <div className="flex gap-1.5 max-w-sm">
+                        <input
+                          type="text"
+                          value={tagInput}
+                          onChange={e => setTagInput(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && tagInput.trim()) {
+                              setEditedOpportunity({...editedOpportunity, tags: [...editedOpportunity.tags, tagInput.trim()]});
+                              setTagInput('');
+                            }
+                          }}
+                          placeholder="Add a tag and press Enter"
+                          className="flex-1 px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50"
+                        />
+                        <button
+                          onClick={() => {
+                            if (tagInput.trim()) {
+                              setEditedOpportunity({...editedOpportunity, tags: [...editedOpportunity.tags, tagInput.trim()]});
+                              setTagInput('');
+                            }
+                          }}
+                          className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded text-xs font-bold text-gray-600"
+                        >
+                          Add
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <FieldView label="Remark" editing={isEditMode} viewValue={editedOpportunity.opportunityNotes || '—'} className="md:col-span-3">
+                    <textarea value={editedOpportunity.opportunityNotes} onChange={e => setEditedOpportunity({...editedOpportunity, opportunityNotes: e.target.value})} className="w-full h-20 px-2 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 resize-none" placeholder="Provide any comments or deal constraints..." />
+                  </FieldView>
+                  <p className="md:col-span-3 text-[10px] text-gray-400 pt-2 border-t border-gray-100">Oppty Stage Change Date: <span className="font-mono text-gray-600">{editedOpportunity.opptyStageChangeDate}</span> · Created on: <span className="font-mono text-gray-600">{editedOpportunity.createdOn}</span></p>
+                </div>
+              </div>
 
             {/* 2. Product Information */}
             <div className="bg-white p-5 rounded-lg border border-gray-200 shadow-sm">
@@ -1187,40 +1398,9 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                 Product Information
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                <div>
-                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Product Team</label>
-                  <select value={editedOpportunity.productTeam} onChange={e => setEditedOpportunity({...editedOpportunity, productTeam: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 font-semibold text-gray-800">
-                    <option value="EB (GMED / GL / Tender)">EB (GMED / GL / Tender)</option>
-                    <option value="GI (GPA / GBT)">GI (GPA / GBT)</option>
-                    <option value="PIES">PIES</option>
-                    <option value="LSP Projects">LSP Projects</option>
-                    <option value="Wellness">Wellness</option>
-                    <option value="Others">Others</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Product Category</label>
-                  <select value={editedOpportunity.productCategory} onChange={e => setEditedOpportunity({...editedOpportunity, productCategory: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 font-semibold text-gray-800">
-                    <option value="Pension">Pension</option>
-                    <option value="Employee Benefit & General Insurance">Employee Benefit & General Insurance</option>
-                    <option value="Project">Project</option>
-                    <option value="Wellness">Wellness</option>
-                    <option value="MPF">MPF</option>
-                    <option value="Tax Deductible">Tax Deductible</option>
-                    <option value="iFast">iFast</option>
-                    <option value="HKMC">HKMC</option>
-                    <option value="Individual - TVC">Individual - TVC</option>
-                    <option value="Individual - QDAP">Individual - QDAP</option>
-                    <option value="Individual - Individual Medical / VHIS">Individual - Individual Medical / VHIS</option>
-                    <option value="Individual - Mutual Fund">Individual - Mutual Fund</option>
-                    <option value="Individual - Annuity">Individual - Annuity</option>
-                    <option value="Individual - PA">Individual - PA</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Product Item</label>
-                  <select 
-                    value={editedOpportunity.productItem} 
+                <FieldView label="Product Item" required editing={isEditMode} viewValue={editedOpportunity.productItem} className="md:col-span-2">
+                  <select
+                    value={editedOpportunity.productItem}
                     onChange={e => {
                       const selectedItem = e.target.value;
                       setEditedOpportunity({
@@ -1229,24 +1409,22 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                         productTeam: resolveProductTeam(selectedItem),
                         productCategory: resolveProductCategory(selectedItem)
                       });
-                    }} 
-                    className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 font-semibold text-gray-800"
+                    }}
+                    className="w-full max-w-sm px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 font-semibold text-gray-800"
                   >
                     {CONFIG_PRODUCT_NAMES.map(pName => (
                       <option key={pName} value={pName}>{pName}</option>
                     ))}
                   </select>
+                </FieldView>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Product Team</label>
+                  <input type="text" value={editedOpportunity.productTeam} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-semibold outline-none cursor-not-allowed" />
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Business Type</label>
-                  <select value={editedOpportunity.businessType} onChange={e => setEditedOpportunity({...editedOpportunity, businessType: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 font-semibold text-gray-800 font-mono">
-                    <option value="NB">New Business (NB)</option>
-                    <option value="Renewal">Renewal (RN)</option>
-                  </select>
+                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Product Category</label>
+                  <input type="text" value={editedOpportunity.productCategory} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-semibold outline-none cursor-not-allowed" />
                 </div>
-              </div>
-              <div className="mt-4 p-3 bg-orange-50 rounded border border-dashed border-orange-200 text-[11px] text-orange-800">
-                💡 <strong>Commercial Context:</strong> Proposals will inherit these selections, keeping the product categorization unified.
               </div>
             </div>
 
@@ -1256,25 +1434,12 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                 <Users size={14} className="text-orange-500" />
                 Sales Assignment
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs">
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Sales Team</label>
-                    <input type="text" value={editedOpportunity.salesTeam} onChange={e => setEditedOpportunity({...editedOpportunity, salesTeam: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white focus:outline-none" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Sales Team Leader</label>
-                    <input type="text" value={editedOpportunity.teamLeader} onChange={e => setEditedOpportunity({...editedOpportunity, teamLeader: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white focus:outline-none" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Estimated Sales Credit</label>
-                    <div className="relative">
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">HK$</span>
-                      <input type="number" value={editedOpportunity.estimatedSalesCredit} onChange={e => setEditedOpportunity({...editedOpportunity, estimatedSalesCredit: Number(e.target.value)})} className="w-full pl-10 pr-2 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white font-mono font-bold" />
-                    </div>
-                  </div>
+              <div className="text-xs">
+                <div className="max-w-xs mb-4">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Sales Team</label>
+                  <input type="text" value={SALES_REP_TEAM_MAP[editedOpportunity.salesRep1] || 'Unassigned'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-semibold outline-none cursor-not-allowed" />
                 </div>
-                <div className="md:col-span-2">
+                <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase block mb-2">Multi-Sales Split % Allocation</label>
                   <table className="w-full border text-xs">
                     <thead>
@@ -1285,132 +1450,55 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                     </thead>
                     <tbody className="divide-y font-semibold">
                       <tr>
-                        <td className="p-2"><input type="text" value={editedOpportunity.salesRep1} onChange={e => setEditedOpportunity({...editedOpportunity, salesRep1: e.target.value})} className="w-full px-1.5 py-1 border border-gray-200 rounded text-xs" /></td>
-                        <td className="p-2"><input type="number" value={editedOpportunity.split1} onChange={e => setEditedOpportunity({...editedOpportunity, split1: Number(e.target.value)})} className="w-full p-1 border border-gray-200 rounded text-xs text-right font-mono" /></td>
+                        <td className="p-2">
+                          {isEditMode ? (
+                            <select value={editedOpportunity.salesRep1} onChange={e => setEditedOpportunity({...editedOpportunity, salesRep1: e.target.value})} className="w-full px-1.5 py-1 border border-gray-200 rounded text-xs">
+                              {SALES_REPS.map(r => <option key={r} value={r}>{r}</option>)}
+                            </select>
+                          ) : <span>{editedOpportunity.salesRep1}</span>}
+                        </td>
+                        <td className="p-2">{isEditMode ? (
+                          <input type="number" value={editedOpportunity.split1} onChange={e => setEditedOpportunity({...editedOpportunity, split1: Number(e.target.value)})} className="w-full p-1 border border-gray-200 rounded text-xs text-right font-mono" />
+                        ) : <span className="block text-right font-mono">{editedOpportunity.split1}</span>}</td>
                       </tr>
-                      <tr>
-                        <td className="p-2"><input type="text" value={editedOpportunity.salesRep2} onChange={e => setEditedOpportunity({...editedOpportunity, salesRep2: e.target.value})} className="w-full px-1.5 py-1 border border-gray-200 rounded text-xs" placeholder="Rep 2" /></td>
-                        <td className="p-2"><input type="number" value={editedOpportunity.split2} onChange={e => setEditedOpportunity({...editedOpportunity, split2: Number(e.target.value)})} className="w-full p-1 border border-gray-200 rounded text-xs text-right font-mono" /></td>
-                      </tr>
-                      <tr>
-                        <td className="p-2"><input type="text" value={editedOpportunity.salesRep3} onChange={e => setEditedOpportunity({...editedOpportunity, salesRep3: e.target.value})} className="w-full px-1.5 py-1 border border-gray-200 rounded text-xs" placeholder="Rep 3" /></td>
-                        <td className="p-2"><input type="number" value={editedOpportunity.split3} onChange={e => setEditedOpportunity({...editedOpportunity, split3: Number(e.target.value)})} className="w-full p-1 border border-gray-200 rounded text-xs text-right font-mono" /></td>
-                      </tr>
+                      {(isEditMode ? numSalesReps >= 2 : !!editedOpportunity.salesRep2) && (
+                        <tr>
+                          <td className="p-2">
+                            {isEditMode ? (
+                              <select value={editedOpportunity.salesRep2} onChange={e => setEditedOpportunity({...editedOpportunity, salesRep2: e.target.value})} className="w-full px-1.5 py-1 border border-gray-200 rounded text-xs">
+                                <option value="">-- Select --</option>
+                                {SALES_REPS.map(r => <option key={r} value={r}>{r}</option>)}
+                              </select>
+                            ) : <span>{editedOpportunity.salesRep2}</span>}
+                          </td>
+                          <td className="p-2">{isEditMode ? (
+                            <input type="number" value={editedOpportunity.split2} onChange={e => setEditedOpportunity({...editedOpportunity, split2: Number(e.target.value)})} className="w-full p-1 border border-gray-200 rounded text-xs text-right font-mono" />
+                          ) : <span className="block text-right font-mono">{editedOpportunity.split2}</span>}</td>
+                        </tr>
+                      )}
+                      {(isEditMode ? numSalesReps >= 3 : !!editedOpportunity.salesRep3) && (
+                        <tr>
+                          <td className="p-2">
+                            {isEditMode ? (
+                              <select value={editedOpportunity.salesRep3} onChange={e => setEditedOpportunity({...editedOpportunity, salesRep3: e.target.value})} className="w-full px-1.5 py-1 border border-gray-200 rounded text-xs">
+                                <option value="">-- Select --</option>
+                                {SALES_REPS.map(r => <option key={r} value={r}>{r}</option>)}
+                              </select>
+                            ) : <span>{editedOpportunity.salesRep3}</span>}
+                          </td>
+                          <td className="p-2">{isEditMode ? (
+                            <input type="number" value={editedOpportunity.split3} onChange={e => setEditedOpportunity({...editedOpportunity, split3: Number(e.target.value)})} className="w-full p-1 border border-gray-200 rounded text-xs text-right font-mono" />
+                          ) : <span className="block text-right font-mono">{editedOpportunity.split3}</span>}</td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
-                </div>
-              </div>
-            </div>
-
-            {/* 4. Opportunity Information */}
-            <div className="bg-white p-5 rounded-lg border border-gray-200 shadow-sm">
-              <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-4 border-b border-gray-100 pb-1.5 flex items-center gap-1.5">
-                <TrendingUp size={14} className="text-orange-500" />
-                Opportunity Information
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-                <div className="md:col-span-2 grid grid-cols-2 gap-3">
-                  <div className="col-span-2">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Opportunity Name</label>
-                    <input type="text" value={editedOpportunity.name} onChange={e => setEditedOpportunity({...editedOpportunity, name: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white font-semibold" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Status / Stage</label>
-                    <select value={editedOpportunity.stage} onChange={e => setEditedOpportunity({...editedOpportunity, stage: e.target.value as import("../../types").ProposalStage, opptyStageChangeDate: new Date().toISOString().replace('T', ' ').substring(0, 19)})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-semibold">
-                      <option value="Qualification">Qualification</option>
-                      <option value="Proposal Preparation">Proposal Preparation</option>
-                      <option value="Negotiation">Negotiation</option>
-                      <option value="Won">Won</option>
-                      <option value="Lost">Lost</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Lead Temp</label>
-                    <select value={editedOpportunity.leadTemperature} onChange={e => setEditedOpportunity({...editedOpportunity, leadTemperature: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-semibold">
-                      <option value="Cold">Cold</option>
-                      <option value="Warm">Warm</option>
-                      <option value="Hot">Hot</option>
-                    </select>
-                  </div>
-                  {editedOpportunity.stage === 'Lost' && (
-                    <div className="col-span-2">
-                      <label className="text-[10px] font-bold text-red-500 uppercase block mb-1">Loss Reason *</label>
-                      <select value={editedOpportunity.lossReason} onChange={e => setEditedOpportunity({...editedOpportunity, lossReason: e.target.value})} className="w-full px-2.5 py-1.5 border border-red-200 bg-red-50/20 rounded text-xs text-red-900 font-semibold">
-                        <option value="">-- Select Loss Reason --</option>
-                        <option value="Price too high">Price too high</option>
-                        <option value="Competitor won">Competitor won</option>
-                        <option value="Coverage gap">Coverage gap</option>
-                        <option value="No budget">No budget</option>
-                        <option value="Other">Other</option>
-                      </select>
-                    </div>
+                  {isEditMode && numSalesReps < 3 && (
+                    <button onClick={() => setNumSalesReps(n => Math.min(3, n + 1))} className="mt-2 flex items-center gap-1 text-orange-600 hover:text-orange-700 text-[11px] font-bold">
+                      <Plus size={12} />
+                      <span>Add Sales Rep</span>
+                    </button>
                   )}
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Gross Revenue</label>
-                    <div className="relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400">HK$</span>
-                      <input type="number" value={editedOpportunity.grossAmount} onChange={e => {
-                        const val = Number(e.target.value);
-                        setEditedOpportunity({ ...editedOpportunity, grossAmount: val, netAmount: Math.round(val * 0.92), estimatedSalesCredit: Math.round(val * 0.15) });
-                      }} className="w-full pl-8 pr-2 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white font-bold font-mono" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Net Amount</label>
-                    <div className="relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400">HK$</span>
-                      <input type="number" value={editedOpportunity.netAmount} onChange={e => setEditedOpportunity({...editedOpportunity, netAmount: Number(e.target.value)})} className="w-full pl-8 pr-2 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white font-bold font-mono" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Probability %</label>
-                    <input type="number" value={editedOpportunity.probability} onChange={e => setEditedOpportunity({...editedOpportunity, probability: Number(e.target.value)})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Expected Staff Count</label>
-                    <input type="number" value={editedOpportunity.expectedEmployeeCount} onChange={e => setEditedOpportunity({...editedOpportunity, expectedEmployeeCount: Number(e.target.value)})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Expected Close Date</label>
-                    <input type="date" value={editedOpportunity.expectedCloseDate} onChange={e => setEditedOpportunity({...editedOpportunity, expectedCloseDate: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Expected Effective Date</label>
-                    <input type="date" value={editedOpportunity.expectedEffectiveDate} onChange={e => setEditedOpportunity({...editedOpportunity, expectedEffectiveDate: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
-                  </div>
-                  <div className="col-span-2">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">GMI Proposal Link</label>
-                    <div className="flex gap-1">
-                      <input type="text" value={editedOpportunity.gmiProposalLink} onChange={e => setEditedOpportunity({...editedOpportunity, gmiProposalLink: e.target.value})} className="flex-1 px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 text-blue-600 font-mono underline" />
-                      <a href={editedOpportunity.gmiProposalLink} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-gray-100 hover:bg-gray-200 border rounded flex items-center justify-center"><ExternalLink size={12} /></a>
-                    </div>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Campaign</label>
-                    <input type="text" value={editedOpportunity.campaign} onChange={e => setEditedOpportunity({...editedOpportunity, campaign: e.target.value})} className="w-full px-2 py-1 border border-gray-200 rounded text-xs bg-gray-50" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Source</label>
-                    <input type="text" value={editedOpportunity.source} onChange={e => setEditedOpportunity({...editedOpportunity, source: e.target.value})} className="w-full px-2 py-1 border border-gray-200 rounded text-xs bg-gray-50" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Referred By</label>
-                    <input type="text" value={editedOpportunity.referredBy} onChange={e => setEditedOpportunity({...editedOpportunity, referredBy: e.target.value})} className="w-full px-2 py-1 border border-gray-200 rounded text-xs bg-gray-50" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Relation Oppty ID</label>
-                    <input type="text" value={editedOpportunity.relationOpptyId} onChange={e => setEditedOpportunity({...editedOpportunity, relationOpptyId: e.target.value})} className="w-full px-2 py-1 border border-gray-200 rounded text-xs font-mono bg-gray-50" />
-                  </div>
-                  <div className="pt-2 border-t text-[10px] text-gray-400 space-y-1">
-                    <p>Oppty Odoo ID: <span className="font-mono text-gray-600">{editedOpportunity.opptyOdooId}</span></p>
-                    <p>Created: <span className="font-mono text-gray-600">{editedOpportunity.createdOn}</span></p>
-                  </div>
-                </div>
-                <div className="md:col-span-3">
-                  <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Opportunity Remarks & Notes</label>
-                  <textarea value={editedOpportunity.opportunityNotes} onChange={e => setEditedOpportunity({...editedOpportunity, opportunityNotes: e.target.value})} className="w-full h-20 px-2 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 resize-none" placeholder="Provide any comments or deal constraints..." />
                 </div>
               </div>
             </div>
@@ -1421,10 +1509,6 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                 <ClipboardCheck size={14} className="text-orange-500" />
                 Product Opportunity Evaluation
               </h3>
-              
-              <div className="mb-4 p-3 bg-blue-50 rounded border border-dashed border-blue-100 text-[11px] text-blue-800">
-                ⚡ <strong>Dynamic Configuration Matrix:</strong> The fields displayed below are customized in real-time, driven directly by your <strong>Product Item configuration</strong> (<em>{editedOpportunity.productItem}</em>).
-              </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Vendor Column */}
@@ -1435,10 +1519,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                   </h4>
                   <div className="space-y-3">
                     {selectedProduct?.vendorFields?.filter((f: any) => f.visible).map((f: any) => (
-                      <div key={f.name}>
-                        <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">
-                          {f.name} {f.required && <span className="text-red-500 font-bold">*</span>}
-                        </label>
+                      <FieldView key={f.name} label={f.name} required={f.required} editing={isEditMode} viewValue={evaluationValues[f.name] || '—'}>
                         <input
                           type="text"
                           value={evaluationValues[f.name] || ''}
@@ -1446,7 +1527,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                           placeholder={`Enter ${f.name}`}
                           className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 font-medium"
                         />
-                      </div>
+                      </FieldView>
                     ))}
                     {(!selectedProduct?.vendorFields || selectedProduct.vendorFields.filter((f: any) => f.visible).length === 0) && (
                       <p className="text-gray-400 text-xs italic">No visible vendor fields are configured for this product.</p>
@@ -1462,10 +1543,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                   </h4>
                   <div className="space-y-3">
                     {selectedProduct?.premiumFields?.filter((f: any) => f.visible).map((f: any) => (
-                      <div key={f.name}>
-                        <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">
-                          {f.name} {f.required && <span className="text-red-500 font-bold">*</span>}
-                        </label>
+                      <FieldView key={f.name} label={f.name} required={f.required} editing={isEditMode} viewValue={evaluationValues[f.name] || '—'}>
                         <input
                           type="text"
                           value={evaluationValues[f.name] || ''}
@@ -1473,7 +1551,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                           placeholder={`Enter ${f.name}`}
                           className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 font-medium font-mono"
                         />
-                      </div>
+                      </FieldView>
                     ))}
                     {(!selectedProduct?.premiumFields || selectedProduct.premiumFields.filter((f: any) => f.visible).length === 0) && (
                       <p className="text-gray-400 text-xs italic">No visible premium fields are configured for this product.</p>
@@ -1491,10 +1569,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                     {selectedProduct?.dateTransferFields?.filter((f: any) => f.visible).map((f: any) => {
                       const isDateField = f.name.toLowerCase().includes('date');
                       return (
-                        <div key={f.name}>
-                          <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1">
-                            {f.name} {f.required && <span className="text-red-500 font-bold">*</span>}
-                          </label>
+                        <FieldView key={f.name} label={f.name} required={f.required} editing={isEditMode} viewValue={evaluationValues[f.name] || '—'}>
                           <input
                             type={isDateField ? "date" : "text"}
                             value={evaluationValues[f.name] || ''}
@@ -1502,7 +1577,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                             placeholder={`Enter ${f.name}`}
                             className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 font-medium font-mono"
                           />
-                        </div>
+                        </FieldView>
                       );
                     })}
                     {(!selectedProduct?.dateTransferFields || selectedProduct.dateTransferFields.filter((f: any) => f.visible).length === 0) && (

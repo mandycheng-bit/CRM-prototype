@@ -8,13 +8,16 @@ interface ProposalPipelineProps {
   proposals: Proposal[];
 }
 
-const STAGES: ProposalStage[] = ['Qualification', 'Proposal Preparation', 'Negotiation', 'Won'];
+const STAGES: ProposalStage[] = ['Draft', 'SOB', 'Finalize', 'Policy'];
 
 const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, proposals }) => {
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
   const [showLost, setShowLost] = useState(false);
+  const [businessTypeFilter, setBusinessTypeFilter] = useState<'NB' | 'Renewal'>('NB');
 
-  const filteredProposals = proposals.filter(p => showLost ? p.stage === 'Lost' : p.stage !== 'Lost');
+  const filteredProposals = proposals.filter(p =>
+    (showLost ? p.stage === 'Lost' : p.stage !== 'Lost') && p.businessType === businessTypeFilter
+  );
 
   const getProposalsByStage = (stage: ProposalStage) => {
     return filteredProposals.filter(p => p.stage === stage);
@@ -146,8 +149,8 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                 <td className="px-6 py-4 text-gray-600">{proposal.client}</td>
                 <td className="px-6 py-4">
                   <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${
-                    proposal.stage === 'Won' ? 'bg-green-100 text-green-700' : 
-                    proposal.stage === 'Negotiation' ? 'bg-purple-100 text-purple-700' :
+                    proposal.stage === 'Policy' ? 'bg-green-100 text-green-700' :
+                    proposal.stage === 'Finalize' ? 'bg-purple-100 text-purple-700' :
                     proposal.stage === 'Lost' ? 'bg-red-100 text-red-700' :
                     'bg-blue-100 text-blue-700'
                   }`}>
@@ -182,7 +185,24 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
     <div className="flex flex-col p-6">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
-          <h1 className="text-xl font-bold text-gray-900">Prospect Pipeline</h1>
+          <div className="flex items-center bg-orange-50 border border-orange-200 rounded-lg p-1">
+            <button
+              onClick={() => setBusinessTypeFilter('NB')}
+              className={`px-4 py-1.5 text-sm font-bold rounded-md transition-all ${
+                businessTypeFilter === 'NB' ? 'bg-orange-500 text-white shadow-sm' : 'text-orange-600 hover:bg-orange-100'
+              }`}
+            >
+              New Business
+            </button>
+            <button
+              onClick={() => setBusinessTypeFilter('Renewal')}
+              className={`px-4 py-1.5 text-sm font-bold rounded-md transition-all ${
+                businessTypeFilter === 'Renewal' ? 'bg-orange-500 text-white shadow-sm' : 'text-orange-600 hover:bg-orange-100'
+              }`}
+            >
+              Renewal Business
+            </button>
+          </div>
           <div className="flex bg-gray-100 rounded-lg p-1">
             <button 
               onClick={() => setViewMode('board')}
@@ -205,7 +225,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
           </div>
 
           <div className="flex bg-gray-100 rounded-lg p-1 ml-2">
-            <button 
+            <button
               onClick={() => setShowLost(false)}
               className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-all ${
                 !showLost ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
@@ -213,7 +233,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
             >
               <span>Active Deals</span>
             </button>
-            <button 
+            <button
               onClick={() => setShowLost(true)}
               className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-all ${
                 showLost ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
