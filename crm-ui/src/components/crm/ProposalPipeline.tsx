@@ -15,6 +15,10 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
   const [showLost, setShowLost] = useState(false);
   const [businessTypeFilter, setBusinessTypeFilter] = useState<'NB' | 'Renewal'>('NB');
 
+  // Unshadowed reference to the full, unfiltered list — a linked previous Prospect
+  // may sit in a different stage/business-type bucket than the current filters show.
+  const allProposals = proposals;
+
   const filteredProposals = proposals.filter(p =>
     (showLost ? p.stage === 'Lost' : p.stage !== 'Lost') && p.businessType === businessTypeFilter
   );
@@ -75,6 +79,18 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                         {proposal.name}
                       </h3>
                       <p className="text-[11px] text-gray-500 truncate" title={proposal.client}>{proposal.client}</p>
+                      {proposal.linkedPreviousProspectId && (() => {
+                        const prevProspect = allProposals.find(p => p.id === proposal.linkedPreviousProspectId);
+                        return prevProspect ? (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onProposalClick(prevProspect); }}
+                            className="text-[9px] text-blue-500 hover:text-blue-700 hover:underline font-semibold truncate text-left mt-0.5"
+                            title={`Renewed from ${prevProspect.name}`}
+                          >
+                            ↳ Renewed from: {prevProspect.name}
+                          </button>
+                        ) : null;
+                      })()}
                     </div>
                     
                     <div className="flex-shrink-0 mt-3 pt-2 border-t border-gray-100">
@@ -144,6 +160,18 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                     {proposal.businessType === 'Renewal' && (
                       <span className="text-[9px] font-bold text-blue-600 uppercase">Renewal</span>
                     )}
+                    {proposal.linkedPreviousProspectId && (() => {
+                      const prevProspect = allProposals.find(p => p.id === proposal.linkedPreviousProspectId);
+                      return prevProspect ? (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onProposalClick(prevProspect); }}
+                          className="text-[9px] text-blue-500 hover:text-blue-700 hover:underline font-semibold text-left mt-0.5"
+                          title={`Renewed from ${prevProspect.name}`}
+                        >
+                          ↳ Renewed from: {prevProspect.name}
+                        </button>
+                      ) : null;
+                    })()}
                   </div>
                 </td>
                 <td className="px-6 py-4 text-gray-600">{proposal.client}</td>

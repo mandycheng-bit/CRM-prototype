@@ -67,6 +67,7 @@ interface ProposalDetailProps {
   proposal: Proposal;
   onBack: () => void;
   onSave?: (updatedProposal: Proposal) => void;
+  onCreateRenewal?: (renewalProspect: Proposal) => void;
 }
 
 interface ChildProposal {
@@ -94,7 +95,7 @@ interface ChildProposal {
   standardPremium?: number;
   premiumFrequency?: string;
   currency?: string;
-  renewRequired?: string;
+  renewRequired?: 'Yes' | 'No';
   benefitType?: string;
   finalizedDate?: string;
   debitNoteNo?: string;
@@ -438,7 +439,7 @@ const CONFIG_PRODUCTS = CONFIG_PRODUCT_NAMES.map(name => ({
   gmiProductGroup: resolveFallbackGmiProductGroup(name)
 }));
 
-export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack, onSave }) => {
+export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack, onSave, onCreateRenewal }) => {
 
   // Helper to get assigned GMI Product Group of productItem from config
   const getAssignedGmiProductGroup = (productItemName: string) => {
@@ -449,6 +450,21 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
       return prod?.gmiProductGroup || resolveFallbackGmiProductGroup(productItemName);
     } catch (e) {
       return resolveFallbackGmiProductGroup(productItemName);
+    }
+  };
+
+  // Helper to list Detailed Product Items configured under a GMI Product Group (Product Configuration module)
+  const getDetailedProductOptions = (gmiProductGroupName: string): { id: string; name: string }[] => {
+    try {
+      const savedGroups = localStorage.getItem('pr2_gmi_groups_master');
+      const gmiGroups = savedGroups ? JSON.parse(savedGroups) : [];
+      const group = gmiGroups.find((g: any) => g.name.toLowerCase() === gmiProductGroupName.toLowerCase());
+      if (!group || !Array.isArray(group.detailedProducts)) return [];
+      return group.detailedProducts
+        .filter((dp: any) => dp.status !== 'Archived')
+        .map((dp: any) => ({ id: dp.id, name: dp.name }));
+    } catch (e) {
+      return [];
     }
   };
 
@@ -502,6 +518,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
     productTeam: initialProductTeam,
     productCategory: initialProductCategory,
     productItem: initialProductItem,
+    detailedProductItem: proposal.detailedProductItem || '',
     businessType: proposal.businessType === 'Renewal' ? 'Renewal' : 'NB',
     campaign: proposal.campaign || CAMPAIGN_OPTIONS[0],
     // Sales Assignment
@@ -587,7 +604,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
       standardPremium: 145000,
       premiumFrequency: 'Annual',
       currency: 'HKD',
-      renewRequired: 'No',
+      renewRequired: '',
       benefitType: 'Core Benefit',
       finalizedDate: '',
       debitNoteNo: 'DN-DEMO-001',
@@ -1052,6 +1069,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
 
   // Proposal Workspace: view/edit toggle + audit history modal
   const [isProposalEditMode, setIsProposalEditMode] = useState(false);
+  const [renewRequiredError, setRenewRequiredError] = useState(false);
   const [showAuditHistory, setShowAuditHistory] = useState(false);
 
   const downloadTextFile = (filename: string, content: string) => {
@@ -1103,6 +1121,9 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
         salesRep: editedOpportunity.salesRep1,
         client: editedOpportunity.company,
         remarks: editedOpportunity.opportunityNotes,
+        productCategory: editedOpportunity.productCategory,
+        productItem: editedOpportunity.productItem,
+        detailedProductItem: editedOpportunity.detailedProductItem,
       });
     }
     setIsEditMode(false);
@@ -1152,8 +1173,59 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
 
   // Convert Proposal to Policy
   const handleConvertToPolicy = (p: ChildProposal) => {
-    setChildProposals(prev => prev.map(item => item.id === p.id ? { ...item, status: 'Converted to Policy', policyId: `POL-MEDIA-${Date.now().toString().slice(-5)}` } : item));
-    alert(`Proposal converted to policy successfully! Policy Number Generated: POL-MEDIA-${Date.now().toString().slice(-5)}`);
+    if (!p.renewRequired) {
+      setRenewRequiredError(true);
+      alert('Please set "Renew Required" (Basic Information tab) before converting this proposal to a policy.');
+      return;
+    }
+    setRenewRequiredError(false);
+
+    const newPolicyId = `POL-MEDIA-${Date.now().toString().slice(-5)}`;
+    const convertedChild: ChildProposal = { ...p, status: 'Converted to Policy', policyId: newPolicyId };
+    setChildProposals(prev => prev.map(item => item.id === p.id ? convertedChild : item));
+    if (selectedChild?.id === p.id) {
+      setSelectedChild(convertedChild);
+    }
+
+    if (p.renewRequired !== 'Yes') {
+      alert(`Proposal converted to policy successfully! Policy Number Generated: ${newPolicyId}\n\nRenew Required = "${p.renewRequired}" — no renewal Prospect was auto-created.`);
+      return;
+    }
+
+    // Auto-create next year's renewal Prospect, linked back to this one (trigger: Proposal converted to Policy, gated on Renew Required = Yes)
+    const today = new Date().toISOString().split('T')[0];
+    let nextEffectiveDate = proposal.effectiveDate;
+    const parsedDate = new Date(proposal.effectiveDate);
+    if (!isNaN(parsedDate.getTime())) {
+      parsedDate.setFullYear(parsedDate.getFullYear() + 1);
+      nextEffectiveDate = parsedDate.toISOString().split('T')[0];
+    }
+
+    const renewalId = `P-REN-${Date.now().toString().slice(-6)}`;
+    const renewalProspect: Proposal = {
+      ...proposal,
+      id: renewalId,
+      name: `${editedOpportunity.name} (Renewal)`,
+      stage: 'Draft',
+      probability: 30,
+      businessType: 'Renewal',
+      client: editedOpportunity.company,
+      salesRep: editedOpportunity.salesRep1,
+      productCategory: editedOpportunity.productCategory,
+      productItem: editedOpportunity.productItem,
+      detailedProductItem: editedOpportunity.detailedProductItem,
+      linkedPreviousProspectId: proposal.id,
+      linkedPolicyId: newPolicyId,
+      effectiveDate: nextEffectiveDate,
+      createdDate: today,
+      lastUpdated: today,
+      stageLastUpdated: today,
+      remarks: `Auto-created renewal from ${proposal.id} upon conversion to policy.`,
+    };
+
+    onCreateRenewal?.(renewalProspect);
+
+    alert(`Proposal converted to policy successfully! Policy Number Generated: ${newPolicyId}\n\nRenew Required = "Yes" — a renewal Prospect "${renewalProspect.name}" (${renewalId}) has been automatically created for next year, linked back to this Prospect.`);
   };
 
   // Simulated drag-drop upload
@@ -1190,6 +1262,14 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
 
   return (
     <div className="flex flex-col h-full bg-[#fafafa]">
+      {proposal.linkedPreviousProspectId && (
+        <div className="px-6 pt-4 max-w-7xl mx-auto w-full">
+          <div className="px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-[11px] text-blue-800 font-semibold flex items-center gap-1.5">
+            <History size={12} />
+            Renewed from last year's Prospect: <span className="font-mono">{proposal.linkedPreviousProspectId}</span>
+          </div>
+        </div>
+      )}
       {!selectedChild ? (
         // ==========================================
         // OPPORTUNITY (COMMERCIAL) WORKSPACE
@@ -1466,6 +1546,18 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                   <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Product Category</label>
                   <input type="text" value={editedOpportunity.productCategory} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-semibold outline-none cursor-not-allowed" />
                 </div>
+                <FieldView label={proposal.linkedPreviousProspectId ? "Detailed Product Item (Last Year's Selection — For Reference)" : "Detailed Product Item"} editing={isEditMode} viewValue={editedOpportunity.detailedProductItem || '—'} className="md:col-span-2">
+                  <select
+                    value={editedOpportunity.detailedProductItem || ''}
+                    onChange={e => setEditedOpportunity({...editedOpportunity, detailedProductItem: e.target.value})}
+                    className="w-full max-w-sm px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 font-semibold text-gray-800"
+                  >
+                    <option value="">Please select</option>
+                    {getDetailedProductOptions(getAssignedGmiProductGroup(editedOpportunity.productItem)).map(dp => (
+                      <option key={dp.id} value={dp.name}>{dp.name}</option>
+                    ))}
+                  </select>
+                </FieldView>
               </div>
             </div>
 
@@ -1968,11 +2060,26 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                       </div>
                       <div>
                         <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Status</label>
-                        <span className={`inline-flex items-center px-2.5 py-1 border text-[10px] font-black rounded uppercase tracking-wider ${
-                          selectedChild.status === 'Converted to Policy' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                          selectedChild.status === 'Approved' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                          'bg-gray-50 text-gray-600 border-gray-200'
-                        }`}>{selectedChild.status}</span>
+                        {isProposalEditMode && selectedChild.status !== 'Converted to Policy' ? (
+                          <select
+                            value={selectedChild.status}
+                            onChange={e => setSelectedChild({...selectedChild, status: e.target.value as ChildProposal['status']})}
+                            className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                          >
+                            {(['Draft', 'In Progress', 'Pending Internal Approval', 'Pending Insurer', 'Approved', 'Accepted', 'Declined', 'Finalized'] as const).map(s => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className={`inline-flex items-center px-2.5 py-1 border text-[10px] font-black rounded uppercase tracking-wider ${
+                            selectedChild.status === 'Converted to Policy' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                            selectedChild.status === 'Approved' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                            'bg-gray-50 text-gray-600 border-gray-200'
+                          }`}>{selectedChild.status}</span>
+                        )}
+                        {selectedChild.status === 'Converted to Policy' && isProposalEditMode && (
+                          <p className="mt-1 text-[9px] text-gray-400">Locked — already converted to policy</p>
+                        )}
                       </div>
                       <div>
                         <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Sales Code</label>
@@ -1995,20 +2102,21 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                         )}
                       </div>
                       <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Renew Required</label>
+                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Renew Required <span className="text-red-500">*</span></label>
                         {isProposalEditMode ? (
                           <select
-                            value={selectedChild.renewRequired || 'No'}
-                            onChange={e => setSelectedChild({...selectedChild, renewRequired: e.target.value})}
-                            className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                            value={selectedChild.renewRequired || ''}
+                            onChange={e => { setSelectedChild({...selectedChild, renewRequired: e.target.value}); setRenewRequiredError(false); }}
+                            className={`w-full px-2.5 py-1.5 border rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none ${renewRequiredError ? 'border-red-400' : 'border-gray-200'}`}
                           >
-                            <option value="No">No</option>
+                            <option value="" disabled>Please select</option>
                             <option value="Yes">Yes</option>
-                            <option value="Optional">Optional</option>
+                            <option value="No">No</option>
                           </select>
                         ) : (
-                          <span className={`inline-flex px-2.5 py-1 border text-[10px] font-black rounded uppercase tracking-wider ${selectedChild.renewRequired === 'Yes' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>{selectedChild.renewRequired || 'No'}</span>
+                          <span className={`inline-flex px-2.5 py-1 border text-[10px] font-black rounded uppercase tracking-wider ${selectedChild.renewRequired === 'Yes' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : selectedChild.renewRequired ? 'bg-gray-50 text-gray-600 border-gray-200' : 'bg-red-50 text-red-500 border-red-200'}`}>{selectedChild.renewRequired || 'Not Set'}</span>
                         )}
+                        {renewRequiredError && <p className="mt-1 text-[10px] text-red-500 font-semibold">Renew Required must be set before converting to policy.</p>}
                       </div>
                     </div>
                   </div>

@@ -23,6 +23,9 @@ export default function App() {
             setProposals(prev => prev.map(x => x.id === p.id ? p : x));
             setSelectedProposal(p);
           }}
+          onCreateRenewal={(renewalProspect) => {
+            setProposals(prev => [...prev, renewalProspect]);
+          }}
         />
       );
     }

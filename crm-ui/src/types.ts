@@ -215,6 +215,8 @@ export interface Proposal {
   linkedPolicyId?: string;
   linkedInvoiceId?: string;
   linkedPreviousPolicyId?: string;
+  linkedPreviousProspectId?: string; // Link to last year's Prospect this renewal was auto-created from
+  detailedProductItem?: string; // Detailed Product Item under the GMI Product Group (7-layer product hierarchy)
 }
 
 export interface CRMRemark {
