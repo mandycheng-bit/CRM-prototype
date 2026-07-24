@@ -92,6 +92,19 @@ export interface DetailedProduct {
 // ==========================================
 // INITIAL SEED DATA
 // ==========================================
+// The 7 real Sales Credit Calculation Rule options from the Products PRD (TASK-12).
+// Shared with ProposalDetail.tsx's Est Sales Credit formula engine — the option value
+// IS the formula identifier, so keep this the single source of truth for both.
+export const SALES_CREDIT_RULES = [
+  'Standard $1,000 sales credit for Est Sales Credit and Gross Amount',
+  'Lump Sum Amount ÷ Transfer Amount × 1%',
+  'RSP Annualised Amount × 5%',
+  'Est Premium × Est Commission Rate',
+  'Commission Amount',
+  '25% × (Lump Sum Amount or Transfer Amount + RSP Annualised Amount)',
+  'Sales Credit Equals to Zero',
+] as const;
+
 const INITIAL_TEAMS = [
   'EB (GMED / GL / Tender)',
   'GI (GPA / GBT)',
@@ -520,7 +533,7 @@ const INITIAL_PRODUCTS: ProductItem[] = INITIAL_PRODUCT_NAMES.map((name, index) 
     group: category,
     gmiProductGroup: gmiGroup,
     appliedCompanyType: index % 2 === 0 ? 'Company' : 'Individual',
-    salesCreditRule: `Formula ${1 + (index % 6)}`,
+    salesCreditRule: SALES_CREDIT_RULES[index % SALES_CREDIT_RULES.length],
     vendorFields: INITIAL_VENDOR_FIELDS.map((f, i) => ({
       name: f,
       visible: i < 3 || f === 'Proposed Service Provider' || f === 'Proposed Insurer',
@@ -666,16 +679,17 @@ export const ProductsConfiguration: React.FC = () => {
   useEffect(() => { localStorage.setItem('pr2_product_audits', JSON.stringify(productAudits)); }, [productAudits]);
 
   // One-time data migration/reset to ensure we load the real enterprise product configuration immediately on mount.
+  // Bumped to v4 to reseed salesCreditRule with the real TASK-12 formulas (previous seed used stub "Formula 1..6" labels).
   useEffect(() => {
-    const currentVersion = localStorage.getItem('pr2_data_version_v3');
-    if (currentVersion !== 'v3') {
+    const currentVersion = localStorage.getItem('pr2_data_version_v4');
+    if (currentVersion !== 'v4') {
       localStorage.setItem('pr2_product_teams', JSON.stringify(INITIAL_TEAMS));
       localStorage.setItem('pr2_product_groups', JSON.stringify(INITIAL_GROUPS));
       localStorage.setItem('pr2_gmi_groups_master', JSON.stringify(INITIAL_GMI_GROUPS_MASTER));
       localStorage.setItem('pr2_benefits_master', JSON.stringify(INITIAL_BENEFITS_MASTER));
       localStorage.setItem('pr2_coverages_master', JSON.stringify(INITIAL_COVERAGES_MASTER));
       localStorage.setItem('pr2_products_list', JSON.stringify(INITIAL_PRODUCTS));
-      localStorage.setItem('pr2_data_version_v3', 'v3');
+      localStorage.setItem('pr2_data_version_v4', 'v4');
 
       // Update state
       setProductTeams(INITIAL_TEAMS);
@@ -702,20 +716,21 @@ export const ProductsConfiguration: React.FC = () => {
   }, [products, selectedProductId, isCreatingNew]);
 
   // Sync detail fields when active product changes
+  const syncDetailFieldsFromProduct = (p: ProductItem) => {
+    setDetailName(p.name);
+    setDetailTeam(p.team);
+    setDetailGroup(p.group);
+    setDetailGmiProductGroup(p.gmiProductGroup || 'Pension');
+    setDetailCompanyType(p.appliedCompanyType || 'Company');
+    setDetailIsInsuranceProduct(p.isInsuranceProduct || '');
+    setDetailSalesCreditRule(p.salesCreditRule || '');
+    setDetailVendorFields(p.vendorFields || []);
+    setDetailPremiumFields(p.premiumFields || []);
+    setDetailDateTransferFields(p.dateTransferFields || []);
+    setDetailStatus(p.status || 'Active');
+  };
   useEffect(() => {
-    if (selectedProduct) {
-      setDetailName(selectedProduct.name);
-      setDetailTeam(selectedProduct.team);
-      setDetailGroup(selectedProduct.group);
-      setDetailGmiProductGroup(selectedProduct.gmiProductGroup || 'Pension');
-      setDetailCompanyType(selectedProduct.appliedCompanyType || 'Company');
-      setDetailIsInsuranceProduct(selectedProduct.isInsuranceProduct || '');
-      setDetailSalesCreditRule(selectedProduct.salesCreditRule || 'Formula 1');
-      setDetailVendorFields(selectedProduct.vendorFields || []);
-      setDetailPremiumFields(selectedProduct.premiumFields || []);
-      setDetailDateTransferFields(selectedProduct.dateTransferFields || []);
-      setDetailStatus(selectedProduct.status || 'Active');
-    }
+    if (selectedProduct) syncDetailFieldsFromProduct(selectedProduct);
   }, [selectedProduct]);
 
   // Save changes to localStorage on master modifications
@@ -779,6 +794,63 @@ export const ProductsConfiguration: React.FC = () => {
     const d = new Date();
     const pad = (v: number) => String(v).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  // Unsaved-changes detection for the Product Item detail form (create or edit)
+  const getBlankVendorFields = (): FieldConfig[] => INITIAL_VENDOR_FIELDS.map(name => ({
+    name,
+    visible: name === 'Proposed Service Provider' || name === 'Proposed Insurer',
+    required: name === 'Proposed Service Provider' || name === 'Proposed Insurer'
+  }));
+  const getBlankPremiumFields = (): FieldConfig[] => INITIAL_PREMIUM_FIELDS.map(name => ({ name, visible: false, required: false }));
+  const getBlankDateTransferFields = (): FieldConfig[] => INITIAL_DATE_TRANSFER_FIELDS.map(name => ({ name, visible: false, required: false }));
+
+  const isDetailFormDirty = () => {
+    if (isCreatingNew) {
+      return (
+        detailName.trim() !== '' ||
+        detailTeam !== '' ||
+        detailGroup !== '' ||
+        detailGmiProductGroup !== '' ||
+        detailCompanyType !== 'Company' ||
+        detailIsInsuranceProduct !== '' ||
+        detailSalesCreditRule !== '' ||
+        JSON.stringify(detailVendorFields) !== JSON.stringify(getBlankVendorFields()) ||
+        JSON.stringify(detailPremiumFields) !== JSON.stringify(getBlankPremiumFields()) ||
+        JSON.stringify(detailDateTransferFields) !== JSON.stringify(getBlankDateTransferFields())
+      );
+    }
+    if (!selectedProduct) return false;
+    return (
+      detailName !== selectedProduct.name ||
+      detailTeam !== selectedProduct.team ||
+      detailGroup !== selectedProduct.group ||
+      detailGmiProductGroup !== (selectedProduct.gmiProductGroup || 'Pension') ||
+      detailCompanyType !== (selectedProduct.appliedCompanyType || 'Company') ||
+      detailIsInsuranceProduct !== (selectedProduct.isInsuranceProduct || '') ||
+      detailSalesCreditRule !== (selectedProduct.salesCreditRule || '') ||
+      detailStatus !== (selectedProduct.status || 'Active') ||
+      JSON.stringify(detailVendorFields) !== JSON.stringify(selectedProduct.vendorFields || []) ||
+      JSON.stringify(detailPremiumFields) !== JSON.stringify(selectedProduct.premiumFields || []) ||
+      JSON.stringify(detailDateTransferFields) !== JSON.stringify(selectedProduct.dateTransferFields || [])
+    );
+  };
+
+  const confirmDiscardUnsavedChanges = () => {
+    if (!isDetailFormDirty()) return true;
+    return confirm('You have unsaved changes. Discard them and continue?');
+  };
+
+  const isTeamPopupDirty = () => teamPopupMode === 'create' ? teamPopupInput.trim() !== '' : teamPopupInput !== teamPopupMode;
+  const closeTeamPopup = () => {
+    if (isTeamPopupDirty() && !confirm('You have unsaved changes. Discard them and close?')) return;
+    setShowTeamPopup(false);
+  };
+
+  const isCategoryPopupDirty = () => categoryPopupMode === 'create' ? categoryPopupInput.trim() !== '' : categoryPopupInput !== categoryPopupMode;
+  const closeCategoryPopup = () => {
+    if (isCategoryPopupDirty() && !confirm('You have unsaved changes. Discard them and close?')) return;
+    setShowCategoryPopup(false);
   };
 
   // Filtered lists
@@ -1769,6 +1841,8 @@ export const ProductsConfiguration: React.FC = () => {
                             key={p.id}
                             onClick={() => {
                               setSelectedProductId(p.id);
+                              syncDetailFieldsFromProduct(p);
+                              setSaveErrors({});
                               setViewMode('detail');
                             }}
                             className="group cursor-pointer hover:bg-orange-50/30 transition-all border-l-4 border-l-transparent hover:border-l-orange-500"
@@ -2149,6 +2223,7 @@ export const ProductsConfiguration: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
+                  if (!confirmDiscardUnsavedChanges()) return;
                   setIsCreatingNew(false);
                   setSaveErrors({});
                   setViewMode('list');
@@ -2186,7 +2261,10 @@ export const ProductsConfiguration: React.FC = () => {
 
                   <button
                     type="button"
-                    onClick={() => handleDuplicateProduct(selectedProduct)}
+                    onClick={() => {
+                      if (!confirmDiscardUnsavedChanges()) return;
+                      handleDuplicateProduct(selectedProduct);
+                    }}
                     className="px-3 py-1.5 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 font-bold uppercase text-[9px] rounded-lg flex items-center justify-center gap-1 cursor-pointer h-8"
                   >
                     <Copy size={12} className="text-gray-400" />
@@ -2319,6 +2397,7 @@ export const ProductsConfiguration: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => {
+                              if (!confirmDiscardUnsavedChanges()) return;
                               setActiveTab('benefitGroups');
                               setViewMode('list');
                             }}
@@ -2433,11 +2512,9 @@ export const ProductsConfiguration: React.FC = () => {
                         className={`w-full text-xs px-2.5 py-2 border rounded-lg bg-white focus:border-orange-500 outline-none font-semibold ${saveErrors.salesCreditRule ? 'border-red-400' : 'border-gray-300'}`}
                       >
                         <option value="">Please select</option>
-                        <option value="Formula 1">Formula 1: Direct Commission split</option>
-                        <option value="Formula 2">Formula 2: Team Pool allocation</option>
-                        <option value="Formula 3">Formula 3: Individual Sales volume incentive</option>
-                        <option value="Formula 4">Formula 4: Dynamic Revenue tier</option>
-                        <option value="Formula 6">Formula 6: Custom Project share ratio</option>
+                        {SALES_CREDIT_RULES.map(rule => (
+                          <option key={rule} value={rule}>{rule}</option>
+                        ))}
                       </select>
                       {saveErrors.salesCreditRule && <p className="mt-1 text-[11px] text-red-500 font-semibold">{saveErrors.salesCreditRule}</p>}
                     </div>
@@ -2675,8 +2752,8 @@ export const ProductsConfiguration: React.FC = () => {
               <span className="text-xs font-black uppercase text-gray-900 tracking-wider">
                 Manage Product Teams
               </span>
-              <button 
-                onClick={() => setShowTeamPopup(false)}
+              <button
+                onClick={closeTeamPopup}
                 className="p-1 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 cursor-pointer"
               >
                 <X size={15} />
@@ -2788,7 +2865,7 @@ export const ProductsConfiguration: React.FC = () => {
             <div className="border-t border-gray-150 px-5 py-3 bg-gray-50 flex justify-end">
               <button
                 type="button"
-                onClick={() => setShowTeamPopup(false)}
+                onClick={closeTeamPopup}
                 className="px-4 py-1.5 bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 font-bold uppercase text-[9px] rounded-lg cursor-pointer"
               >
                 Close
@@ -2806,8 +2883,8 @@ export const ProductsConfiguration: React.FC = () => {
               <span className="text-xs font-black uppercase text-gray-900 tracking-wider">
                 Manage Product Categories
               </span>
-              <button 
-                onClick={() => setShowCategoryPopup(false)}
+              <button
+                onClick={closeCategoryPopup}
                 className="p-1 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 cursor-pointer"
               >
                 <X size={15} />
@@ -2919,7 +2996,7 @@ export const ProductsConfiguration: React.FC = () => {
             <div className="border-t border-gray-150 px-5 py-3 bg-gray-50 flex justify-end">
               <button
                 type="button"
-                onClick={() => setShowCategoryPopup(false)}
+                onClick={closeCategoryPopup}
                 className="px-4 py-1.5 bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 font-bold uppercase text-[9px] rounded-lg cursor-pointer"
               >
                 Close

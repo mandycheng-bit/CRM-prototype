@@ -403,6 +403,21 @@ export const MOCK_COMPANIES: Company[] = [
     status: 'Active',
     createdDate: '2020-01-01',
     lastUpdated: '2024-03-25'
+  },
+  {
+    id: 'COMP-003',
+    name: 'SAMPLE LAPSED TRADING CO.',
+    chineseName: '示範已流失貿易公司',
+    type: 'Limited Company',
+    registrationNo: '00000003',
+    industry: 'Trading',
+    region: 'HK',
+    country: 'Hong Kong',
+    assignedSales: 'Sales Rep A',
+    team: 'Sales Team A',
+    status: 'Lapsed',
+    createdDate: '2019-01-01',
+    lastUpdated: '2023-11-10'
   }
 ];
 

@@ -6,9 +6,9 @@ import {
   XCircle, History, FileCode, Check, Send, Upload, FileUp,
   Info, Activity as ActivityIcon, Edit, User, HelpCircle, Briefcase,
   ChevronRight, Layers, FileSpreadsheet, Star, Play, Award, ClipboardCheck,
-  RefreshCw
+  RefreshCw, Lock
 } from 'lucide-react';
-import type { Proposal, BenefitRow } from '../../types';
+import type { Proposal, BenefitRow, ProductFileRequirement } from '../../types';
 import { MOCK_COMPANIES, MOCK_INDIVIDUALS, MOCK_LEADS, MOCK_CAMPAIGNS } from '../../constants';
 
 const SALES_REPS = ['Sales Rep A', 'Sales Rep B', 'Sales Rep C', 'Sales Rep D'];
@@ -33,16 +33,136 @@ const RB_PROBABILITY_OPTIONS = [0, 65, 75, 85, 95, 100];
 
 // Company/Individual Master lookup: Lead + Customer (Company/Individual), excluding Archived.
 // Selection is two-step: entityType (Company/Individual) then source (Customer/Lead).
-const COMPANY_INDIVIDUAL_OPTIONS: { id: string; label: string; entityType: 'Company' | 'Individual'; source: 'Customer' | 'Lead' }[] = [
-  ...MOCK_COMPANIES.filter(c => c.status !== 'Archived').map(c => ({ id: c.id, label: c.name, entityType: 'Company' as const, source: 'Customer' as const })),
-  ...MOCK_INDIVIDUALS.filter(i => i.status !== 'Archived').map(i => ({ id: i.id, label: i.fullName, entityType: 'Individual' as const, source: 'Customer' as const })),
-  ...MOCK_LEADS.filter(l => (l.leadStatus as string) !== 'Archived').map(l => ({ id: l.id, label: l.leadName, entityType: l.type, source: 'Lead' as const })),
+// Lapsed customers are intentionally NOT excluded — they must remain selectable when creating an Opportunity.
+type MasterType = 'Lead' | 'Customer' | 'Lapsed Customer';
+const COMPANY_INDIVIDUAL_OPTIONS: { id: string; label: string; entityType: 'Company' | 'Individual'; source: 'Customer' | 'Lead'; masterType: MasterType }[] = [
+  ...MOCK_COMPANIES.filter(c => c.status !== 'Archived').map(c => ({ id: c.id, label: c.name, entityType: 'Company' as const, source: 'Customer' as const, masterType: (c.status === 'Lapsed' ? 'Lapsed Customer' : 'Customer') as MasterType })),
+  ...MOCK_INDIVIDUALS.filter(i => i.status !== 'Archived').map(i => ({ id: i.id, label: i.fullName, entityType: 'Individual' as const, source: 'Customer' as const, masterType: (i.status === 'Lapsed' ? 'Lapsed Customer' : 'Customer') as MasterType })),
+  ...MOCK_LEADS.filter(l => (l.leadStatus as string) !== 'Archived').map(l => ({ id: l.id, label: l.leadName, entityType: l.type, source: 'Lead' as const, masterType: 'Lead' as MasterType })),
 ];
 const resolveCompanyMeta = (label: string) => {
   const match = COMPANY_INDIVIDUAL_OPTIONS.find(o => o.label === label);
-  return match ? { entityType: match.entityType, source: match.source } : { entityType: 'Company' as const, source: 'Customer' as const };
+  return match
+    ? { entityType: match.entityType, source: match.source, masterType: match.masterType }
+    : { entityType: 'Company' as const, source: 'Customer' as const, masterType: 'Customer' as MasterType };
 };
 const CAMPAIGN_OPTIONS = MOCK_CAMPAIGNS.filter(c => c.active).map(c => c.name);
+
+// Mock master lists for Product Opportunity Evaluation lookups. Managed via the
+// "Manage MPF Scheme" / "Manage Insurer" popups below, persisted to localStorage
+// under 'pr2_mpf_schemes' / 'pr2_insurers' so they survive across sessions.
+const INITIAL_MPF_SCHEMES = [
+  'Manulife MPF (Global Select) Plan',
+  'AIA MPF - Prime Value Choice',
+  'HSBC Mandatory Provident Fund - SuperTrust Plus',
+  'Sun Life MPF Master Trust',
+  'Principal MPF Simple Plan',
+];
+const INITIAL_INSURERS = [
+  'AIA International',
+  'AXA General Insurance',
+  'Manulife (International)',
+  'Prudential Hong Kong',
+  'Zurich Insurance',
+];
+// Mocked stand-in for the Employee module (not yet built) — used for the
+// Member Briefing Speaker User Lookup Dropdown.
+const EMPLOYEE_DIRECTORY = ['Chan Tai Man', 'Wong Siu Ling', 'Lee Ka Fai', 'Cheung Wai Yee', 'Ho Chun Kit'];
+// "Employer Option" list source is explicitly TBD in the field spec; using a fixed
+// placeholder set until a management decision is made.
+const EMPLOYER_OPTION_CHOICES = ['Employer Pays 100%', 'Employee Pays 100%', 'Shared 50/50', 'Other'];
+
+type EvalFieldType = 'text' | 'integer' | 'decimal2' | 'percent2' | 'auto2' | 'mpf-lookup' | 'insurer-lookup' | 'employer-option' | 'employee-lookup' | 'date';
+interface EvalFieldSpec {
+  type: EvalFieldType;
+  formula?: (values: Record<string, string>) => number;
+}
+// Field-by-field type/format spec for the Product Opportunity Evaluation section
+// (Vendor / Premium / Date & Transfer columns), driving how each field renders
+// regardless of which fields a given product has marked Display/Required.
+const EVAL_FIELD_SPECS: Record<string, EvalFieldSpec> = {
+  'Existing Scheme 1': { type: 'mpf-lookup' },
+  'Existing Scheme 2': { type: 'mpf-lookup' },
+  'Existing Scheme 3': { type: 'mpf-lookup' },
+  'Existing Scheme 4': { type: 'mpf-lookup' },
+  'Existing Scheme 5': { type: 'mpf-lookup' },
+  'Proposed Service Provider': { type: 'insurer-lookup' },
+  'New Scheme': { type: 'mpf-lookup' },
+  'Member First Name': { type: 'text' },
+  'Member Last Name': { type: 'text' },
+  'Existing Insurer': { type: 'insurer-lookup' },
+  'Proposed Insurer': { type: 'insurer-lookup' },
+
+  'No. of Employee / Insured': { type: 'integer' },
+  'Current Annual Contribution': { type: 'decimal2' },
+  'Current Net Asset Value': { type: 'decimal2' },
+  'Employer Option': { type: 'employer-option' },
+  'Est Conversion Rate - Contribution (%)': { type: 'percent2' },
+  'Est Conversion Rate - Asset Transfer (%)': { type: 'percent2' },
+  'Est Annual Contribution': {
+    type: 'auto2',
+    formula: v => (parseFloat(v['Current Annual Contribution']) || 0) * (parseFloat(v['Est Conversion Rate - Contribution (%)']) || 0) / 100
+  },
+  'Est ATO': {
+    type: 'auto2',
+    formula: v => (parseFloat(v['Current Net Asset Value']) || 0) * (parseFloat(v['Est Conversion Rate - Asset Transfer (%)']) || 0) / 100
+  },
+  'Project Fee': { type: 'decimal2' },
+  'Lump Sum Amount': { type: 'decimal2' },
+  'Transfer Amount': { type: 'decimal2' },
+  'RSP Annualised Amount': { type: 'decimal2' },
+  'Transaction Amount': { type: 'decimal2' },
+  'Commission Amount': { type: 'decimal2' },
+  'Est Premium': { type: 'decimal2' },
+  'Est Commission Rate': { type: 'percent2' },
+  'Est Commission Amount': {
+    type: 'auto2',
+    formula: v => (parseFloat(v['Est Premium']) || 0) * (parseFloat(v['Est Commission Rate']) || 0) / 100
+  },
+
+  'No. of Briefing Sessions': { type: 'integer' },
+  'Member Briefing Speaker': { type: 'employee-lookup' },
+  'Total Briefing Attendees': { type: 'integer' },
+  'No. of Employee Transfer Est by ES': { type: 'integer' },
+  'Actual No. of Employee Transfer': { type: 'integer' },
+  'Form Received Date': { type: 'date' },
+  'Application Date': { type: 'date' },
+  'Date to Provider / Insurer': { type: 'date' },
+  'Date to Client': { type: 'date' },
+  'eMPF Submission Ref. No.': { type: 'text' },
+};
+const formatDecimal2 = (raw: string | number) => {
+  const num = typeof raw === 'number' ? raw : parseFloat(raw);
+  return isNaN(num) ? '' : num.toFixed(2);
+};
+
+// Est Sales Credit formula engine. Rule strings must match ProductsConfiguration.tsx's
+// SALES_CREDIT_RULES exactly (the 7 real formulas from the Products PRD, TASK-12).
+const computeEstSalesCredit = (rule: string | undefined, v: Record<string, string>): number => {
+  const num = (name: string) => parseFloat(v[name]) || 0;
+  switch (rule) {
+    case 'Standard $1,000 sales credit for Est Sales Credit and Gross Amount':
+      return 1000;
+    case 'Lump Sum Amount ÷ Transfer Amount × 1%': {
+      const transfer = num('Transfer Amount');
+      return transfer !== 0 ? (num('Lump Sum Amount') / transfer) * 0.01 : 0;
+    }
+    case 'RSP Annualised Amount × 5%':
+      return num('RSP Annualised Amount') * 0.05;
+    case 'Est Premium × Est Commission Rate':
+      return num('Est Premium') * (num('Est Commission Rate') / 100);
+    case 'Commission Amount':
+      return num('Commission Amount');
+    case '25% × (Lump Sum Amount or Transfer Amount + RSP Annualised Amount)': {
+      const base = num('Transfer Amount') || num('Lump Sum Amount');
+      return 0.25 * (base + num('RSP Annualised Amount'));
+    }
+    case 'Sales Credit Equals to Zero':
+      return 0;
+    default:
+      return 0;
+  }
+};
 
 // Renders a field's editable control when editing, or a plain read-only value otherwise.
 const FieldView: React.FC<{
@@ -65,9 +185,13 @@ const FieldView: React.FC<{
 
 interface ProposalDetailProps {
   proposal: Proposal;
+  allProposals?: Proposal[];
   onBack: () => void;
   onSave?: (updatedProposal: Proposal) => void;
   onCreateRenewal?: (renewalProspect: Proposal) => void;
+  onNavigateToProspect?: (targetProspect: Proposal) => void;
+  onDelete?: (proposalId: string) => void;
+  currentRole?: 'Sales Rep' | 'Admin';
 }
 
 interface ChildProposal {
@@ -439,7 +563,21 @@ const CONFIG_PRODUCTS = CONFIG_PRODUCT_NAMES.map(name => ({
   gmiProductGroup: resolveFallbackGmiProductGroup(name)
 }));
 
-export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack, onSave, onCreateRenewal }) => {
+export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allProposals, onBack, onSave, onCreateRenewal, onNavigateToProspect, onDelete, currentRole = 'Sales Rep' }) => {
+
+  // Helper: is this product configured (Product Configuration module) as
+  // "Applied to Individual" + "Is Insurance Product" = No — the one carve-out
+  // where a Lead auto-converts to Customer at 100% probability, no button needed.
+  const isNonInsuranceIndividualProduct = (productItemName: string) => {
+    try {
+      const saved = localStorage.getItem('pr2_products_list');
+      const products = saved ? JSON.parse(saved) : CONFIG_PRODUCTS;
+      const prod = products.find((p: any) => p.name === productItemName);
+      return prod?.appliedCompanyType === 'Individual' && prod?.isInsuranceProduct === 'No';
+    } catch (e) {
+      return false;
+    }
+  };
 
   // Helper to get assigned GMI Product Group of productItem from config
   const getAssignedGmiProductGroup = (productItemName: string) => {
@@ -514,6 +652,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
     effectiveDate3: '',
     // Customer Info
     company: proposal.client || 'DEMO COMPANY CO. LTD.',
+    masterType: proposal.masterType || resolveCompanyMeta(proposal.client || 'DEMO COMPANY CO. LTD.').masterType,
     // Product Info
     productTeam: initialProductTeam,
     productCategory: initialProductCategory,
@@ -537,6 +676,20 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
     opptyOdooId: 'odoo_opp_0001',
     createdOn: '2026-03-20 10:15:30',
     opptyStageChangeDate: '2026-04-10 14:22:05',
+    // Report & Dashboard
+    salesRep1GrossAmount: proposal.salesRep1GrossAmount ?? 0,
+    salesRep1NetAmount: proposal.salesRep1NetAmount ?? 0,
+    salesRep2GrossAmount: proposal.salesRep2GrossAmount ?? 0,
+    salesRep2NetAmount: proposal.salesRep2NetAmount ?? 0,
+    salesRep3GrossAmount: proposal.salesRep3GrossAmount ?? 0,
+    salesRep3NetAmount: proposal.salesRep3NetAmount ?? 0,
+    opptyRejectDate: proposal.opptyRejectDate || '',
+    opptyRejectFrequency: proposal.opptyRejectFrequency ?? 0,
+    // Product File Requirements
+    isFilterByProductItem: proposal.isFilterByProductItem ?? true,
+    productFileRequirements: proposal.productFileRequirements ?? [
+      { id: 'DOC-SEED-1', name: 'Appointment Letter', type: 'Compulsory' as const, relatedProductItem: 'Pension - MPF/ORSO Appointed Case Only', checkStage: 'Won 100%' }
+    ],
   });
   const [editedOpportunity, setEditedOpportunity] = useState(buildInitialOpportunity);
 
@@ -559,13 +712,13 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
     setCompanyEntityType(t);
     setCompanySearch('');
     const opts = COMPANY_INDIVIDUAL_OPTIONS.filter(o => o.entityType === t && o.source === companySource);
-    setEditedOpportunity(prev => ({ ...prev, company: opts[0]?.label || '' }));
+    setEditedOpportunity(prev => ({ ...prev, company: opts[0]?.label || '', masterType: opts[0]?.masterType || 'Customer' }));
   };
   const handleToggleCompanySource = (t: 'Customer' | 'Lead') => {
     setCompanySource(t);
     setCompanySearch('');
     const opts = COMPANY_INDIVIDUAL_OPTIONS.filter(o => o.entityType === companyEntityType && o.source === t);
-    setEditedOpportunity(prev => ({ ...prev, company: opts[0]?.label || '' }));
+    setEditedOpportunity(prev => ({ ...prev, company: opts[0]?.label || '', masterType: opts[0]?.masterType || 'Customer' }));
   };
 
   const handleCancelEdit = () => {
@@ -604,7 +757,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
       standardPremium: 145000,
       premiumFrequency: 'Annual',
       currency: 'HKD',
-      renewRequired: '',
+      renewRequired: undefined,
       benefitType: 'Core Benefit',
       finalizedDate: '',
       debitNoteNo: 'DN-DEMO-001',
@@ -867,7 +1020,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
   // Keep the parent childProposals list in sync with the selectedChild (Proposal Workspace)
   useEffect(() => {
     if (selectedChild) {
-      setChildProposals(prev => 
+      setChildProposals(prev =>
         prev.map(item => item.id === selectedChild.id ? selectedChild : item)
       );
     }
@@ -1004,14 +1157,15 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
   const [evaluationValues, setEvaluationValues] = useState<Record<string, string>>(() => {
     const saved = localStorage.getItem(`pr2_opp_eval_${proposal.id}`);
     return saved ? JSON.parse(saved) : {
-      'Proposed Service Provider': 'Sample Insurer',
-      'Existing Insurer': 'Demo Insurer',
+      'Proposed Service Provider': 'AIA International',
+      'Existing Insurer': 'Manulife (International)',
       'No. of Employee / Insured': '45',
-      'Est Premium': '150000',
+      'Est Premium': '150000.00',
+      'Est Commission Rate': '15.00',
       'Application Date': '2026-03-25',
       'Form Received Date': '2026-03-24',
       'No. of Briefing Sessions': '2',
-      'Member Briefing Speaker': 'Sales Rep A',
+      'Member Briefing Speaker': 'Chan Tai Man',
       'Total Briefing Attendees': '38',
       'No. of Employee Transfer Est by ES': '40'
     };
@@ -1020,6 +1174,176 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
   const handleSaveEvaluation = (values: Record<string, string>) => {
     setEvaluationValues(values);
     localStorage.setItem(`pr2_opp_eval_${proposal.id}`, JSON.stringify(values));
+  };
+
+  // MPF Scheme / Insurer master lists (shared across proposals via localStorage)
+  const [mpfSchemes, setMpfSchemes] = useState<string[]>(() => {
+    const saved = localStorage.getItem('pr2_mpf_schemes');
+    return saved ? JSON.parse(saved) : INITIAL_MPF_SCHEMES;
+  });
+  useEffect(() => { localStorage.setItem('pr2_mpf_schemes', JSON.stringify(mpfSchemes)); }, [mpfSchemes]);
+
+  const [insurers, setInsurers] = useState<string[]>(() => {
+    const saved = localStorage.getItem('pr2_insurers');
+    return saved ? JSON.parse(saved) : INITIAL_INSURERS;
+  });
+  useEffect(() => { localStorage.setItem('pr2_insurers', JSON.stringify(insurers)); }, [insurers]);
+
+  // "Manage MPF Scheme" / "Manage Insurer" popup — one reusable popup parameterized by target list
+  const [manageListTarget, setManageListTarget] = useState<'mpf' | 'insurer' | null>(null);
+  const [manageListMode, setManageListMode] = useState<'create' | 'rename'>('create');
+  const [manageListOriginalValue, setManageListOriginalValue] = useState('');
+  const [manageListInput, setManageListInput] = useState('');
+
+  const openManageList = (target: 'mpf' | 'insurer') => {
+    setManageListTarget(target);
+    setManageListMode('create');
+    setManageListOriginalValue('');
+    setManageListInput('');
+  };
+  const manageListLabel = manageListTarget === 'mpf' ? 'MPF Scheme' : 'Insurer';
+  const manageListItems = manageListTarget === 'mpf' ? mpfSchemes : manageListTarget === 'insurer' ? insurers : [];
+  const setManageListItemsFor = (items: string[]) => {
+    if (manageListTarget === 'mpf') setMpfSchemes(items);
+    else if (manageListTarget === 'insurer') setInsurers(items);
+  };
+  const isManageListDirty = () => manageListMode === 'create' ? manageListInput.trim() !== '' : manageListInput !== manageListOriginalValue;
+  const closeManageListPopup = () => {
+    if (isManageListDirty() && !confirm('You have unsaved changes. Discard them and close?')) return;
+    setManageListTarget(null);
+  };
+  const handleManageListSave = () => {
+    const trimmed = manageListInput.trim();
+    if (!trimmed) { alert(`${manageListLabel} name is required.`); return; }
+    const items = manageListItems;
+    if (manageListMode === 'create') {
+      if (items.some(i => i.toLowerCase() === trimmed.toLowerCase())) { alert(`A ${manageListLabel} with this name already exists.`); return; }
+      setManageListItemsFor([...items, trimmed]);
+    } else {
+      if (items.some(i => i.toLowerCase() === trimmed.toLowerCase() && i !== manageListOriginalValue)) { alert(`A ${manageListLabel} with this name already exists.`); return; }
+      setManageListItemsFor(items.map(i => i === manageListOriginalValue ? trimmed : i));
+    }
+    setManageListMode('create');
+    setManageListOriginalValue('');
+    setManageListInput('');
+  };
+  const handleManageListDelete = (value: string) => {
+    const items = manageListItems;
+    if (items.length <= 1) { alert(`At least one ${manageListLabel} must exist.`); return; }
+    if (confirm(`Are you sure you want to delete "${value}"?`)) {
+      setManageListItemsFor(items.filter(i => i !== value));
+    }
+  };
+
+  // Generic renderer for a Product Opportunity Evaluation field, driven by EVAL_FIELD_SPECS
+  const renderEvalField = (f: { name: string; required?: boolean }) => {
+    const spec = EVAL_FIELD_SPECS[f.name] || { type: 'text' as const };
+    const rawValue = evaluationValues[f.name] || '';
+    const commonInputClass = "w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 font-medium";
+
+    if (spec.type === 'auto2') {
+      const computed = spec.formula ? spec.formula(evaluationValues) : 0;
+      return (
+        <FieldView key={f.name} label={f.name} required={f.required} editing={isEditMode} viewValue={formatDecimal2(computed)}>
+          <input type="text" value={formatDecimal2(computed)} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 font-mono font-bold cursor-not-allowed outline-none" />
+        </FieldView>
+      );
+    }
+
+    let control: React.ReactNode;
+    let viewValue: React.ReactNode = rawValue || '—';
+
+    switch (spec.type) {
+      case 'integer':
+        control = (
+          <input
+            type="number" step={1} value={rawValue}
+            onChange={e => handleSaveEvaluation({ ...evaluationValues, [f.name]: e.target.value.replace(/[^0-9-]/g, '') })}
+            placeholder={`Enter ${f.name}`} className={`${commonInputClass} font-mono`}
+          />
+        );
+        break;
+      case 'decimal2':
+        control = (
+          <input
+            type="number" step="0.01" value={rawValue}
+            onChange={e => handleSaveEvaluation({ ...evaluationValues, [f.name]: e.target.value })}
+            onBlur={e => handleSaveEvaluation({ ...evaluationValues, [f.name]: formatDecimal2(e.target.value) })}
+            placeholder={`Enter ${f.name}`} className={`${commonInputClass} font-mono`}
+          />
+        );
+        viewValue = rawValue ? formatDecimal2(rawValue) : '—';
+        break;
+      case 'percent2':
+        control = (
+          <div className="relative">
+            <input
+              type="number" step="0.01" max={100} value={rawValue}
+              onChange={e => handleSaveEvaluation({ ...evaluationValues, [f.name]: e.target.value })}
+              onBlur={e => {
+                const num = parseFloat(e.target.value);
+                const capped = isNaN(num) ? e.target.value : Math.min(100, num);
+                handleSaveEvaluation({ ...evaluationValues, [f.name]: formatDecimal2(capped) });
+              }}
+              placeholder={`Enter ${f.name}`} className={`${commonInputClass} font-mono pr-6`}
+            />
+            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 font-bold">%</span>
+          </div>
+        );
+        viewValue = rawValue ? `${formatDecimal2(rawValue)}%` : '—';
+        break;
+      case 'date':
+        control = (
+          <input
+            type="date" value={rawValue}
+            onChange={e => handleSaveEvaluation({ ...evaluationValues, [f.name]: e.target.value })}
+            className={`${commonInputClass} font-mono`}
+          />
+        );
+        break;
+      case 'mpf-lookup':
+      case 'insurer-lookup': {
+        const options = spec.type === 'mpf-lookup' ? mpfSchemes : insurers;
+        const manageLabel = spec.type === 'mpf-lookup' ? 'MPF Scheme' : 'Insurer';
+        control = (
+          <select value={rawValue} onChange={e => handleSaveEvaluation({ ...evaluationValues, [f.name]: e.target.value })} className={commonInputClass}>
+            <option value="" disabled hidden>{`Select from ${manageLabel}`}</option>
+            {options.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+        );
+        break;
+      }
+      case 'employer-option':
+        control = (
+          <select value={rawValue} onChange={e => handleSaveEvaluation({ ...evaluationValues, [f.name]: e.target.value })} className={commonInputClass}>
+            <option value="">Please select</option>
+            {EMPLOYER_OPTION_CHOICES.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+        );
+        break;
+      case 'employee-lookup':
+        control = (
+          <select value={rawValue} onChange={e => handleSaveEvaluation({ ...evaluationValues, [f.name]: e.target.value })} className={commonInputClass}>
+            <option value="">Please select</option>
+            {EMPLOYEE_DIRECTORY.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+        );
+        break;
+      default:
+        control = (
+          <input
+            type="text" value={rawValue}
+            onChange={e => handleSaveEvaluation({ ...evaluationValues, [f.name]: e.target.value })}
+            placeholder={`Enter ${f.name}`} className={commonInputClass}
+          />
+        );
+    }
+
+    return (
+      <FieldView key={f.name} label={f.name} required={f.required} editing={isEditMode} viewValue={viewValue}>
+        {control}
+      </FieldView>
+    );
   };
 
   // Gross Amount is read-only, sourced from Product Opportunity Evaluation.
@@ -1111,6 +1435,16 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
 
   // Save changes to opportunity
   const handleSaveOpportunity = () => {
+    // Master Type conversion is only committed once a 100% probability is actually
+    // saved — not while the value is still being edited in the draft.
+    let savedMasterType = editedOpportunity.masterType;
+    if (editedOpportunity.probability === 100) {
+      if (editedOpportunity.masterType === 'Lapsed Customer') {
+        savedMasterType = 'Customer';
+      } else if (editedOpportunity.masterType === 'Lead' && isNonInsuranceIndividualProduct(editedOpportunity.productItem)) {
+        savedMasterType = 'Customer';
+      }
+    }
     if (onSave) {
       onSave({
         ...proposal,
@@ -1120,14 +1454,68 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
         expectedRevenueGross: grossAmount,
         salesRep: editedOpportunity.salesRep1,
         client: editedOpportunity.company,
+        masterType: savedMasterType,
         remarks: editedOpportunity.opportunityNotes,
         productCategory: editedOpportunity.productCategory,
         productItem: editedOpportunity.productItem,
         detailedProductItem: editedOpportunity.detailedProductItem,
+        salesRep1GrossAmount: editedOpportunity.salesRep1GrossAmount,
+        salesRep1NetAmount: editedOpportunity.salesRep1NetAmount,
+        salesRep2GrossAmount: editedOpportunity.salesRep2GrossAmount,
+        salesRep2NetAmount: editedOpportunity.salesRep2NetAmount,
+        salesRep3GrossAmount: editedOpportunity.salesRep3GrossAmount,
+        salesRep3NetAmount: editedOpportunity.salesRep3NetAmount,
+        opptyRejectDate: editedOpportunity.opptyRejectDate,
+        opptyRejectFrequency: editedOpportunity.opptyRejectFrequency,
+        isFilterByProductItem: editedOpportunity.isFilterByProductItem,
+        productFileRequirements: editedOpportunity.productFileRequirements,
       });
     }
+    setEditedOpportunity(prev => ({ ...prev, masterType: savedMasterType }));
     setIsEditMode(false);
     alert("Opportunity changes saved successfully!");
+  };
+
+  const handleDeleteOpportunity = () => {
+    if (editedOpportunity.probability === 100 && currentRole !== 'Admin') {
+      alert('Only Admin can delete an Opportunity that has reached 100% probability.');
+      return;
+    }
+    if (!confirm(`Delete Opportunity "${editedOpportunity.name}" (${proposal.id})? This cannot be undone.`)) return;
+    onDelete?.(proposal.id);
+    onBack();
+  };
+
+  // Manual conversion for a Lead that reached 100% probability (already saved) on a
+  // product NOT covered by the auto-convert rule (Applied to Individual + non-insurance).
+  // No standalone Customer record page exists in this prototype, so the conversion is
+  // reflected inline and committed immediately — it's its own lifecycle action, not a draft edit.
+  const handleConvertLeadToCustomer = () => {
+    onSave?.({ ...proposal, masterType: 'Customer' });
+    setEditedOpportunity(prev => ({ ...prev, masterType: 'Customer' }));
+    alert(`"${proposal.client}" has been converted to a Customer. Existing Lead data has been carried over to the new Customer record.`);
+  };
+
+  // Product File Requirements — Report & Dashboard / Product File section helpers
+  const updateFileRequirement = (idx: number, patch: Partial<ProductFileRequirement>) => {
+    setEditedOpportunity({
+      ...editedOpportunity,
+      productFileRequirements: editedOpportunity.productFileRequirements.map((r, i) => i === idx ? { ...r, ...patch } : r)
+    });
+  };
+  const addFileRequirement = () => {
+    setEditedOpportunity({
+      ...editedOpportunity,
+      productFileRequirements: [...editedOpportunity.productFileRequirements, {
+        id: `DOC-${Date.now()}`, name: '', type: 'Compulsory', relatedProductItem: '', checkStage: ''
+      }]
+    });
+  };
+  const removeFileRequirement = (idx: number) => {
+    setEditedOpportunity({
+      ...editedOpportunity,
+      productFileRequirements: editedOpportunity.productFileRequirements.filter((_, i) => i !== idx)
+    });
   };
 
   // Create new child proposal
@@ -1221,9 +1609,21 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
       lastUpdated: today,
       stageLastUpdated: today,
       remarks: `Auto-created renewal from ${proposal.id} upon conversion to policy.`,
+      // Report & Dashboard figures are specific to this year's deal — the new renewal starts fresh.
+      // Product File Requirements carry over via the ...proposal spread, since compliance requirements are typically stable year over year.
+      salesRep1GrossAmount: 0,
+      salesRep1NetAmount: 0,
+      salesRep2GrossAmount: 0,
+      salesRep2NetAmount: 0,
+      salesRep3GrossAmount: 0,
+      salesRep3NetAmount: 0,
+      opptyRejectDate: undefined,
+      opptyRejectFrequency: 0,
     };
 
     onCreateRenewal?.(renewalProspect);
+    // Set the forward link on this (original) Prospect so both sides show Linked Prospect
+    onSave?.({ ...proposal, linkedNextProspectId: renewalId });
 
     alert(`Proposal converted to policy successfully! Policy Number Generated: ${newPolicyId}\n\nRenew Required = "Yes" — a renewal Prospect "${renewalProspect.name}" (${renewalId}) has been automatically created for next year, linked back to this Prospect.`);
   };
@@ -1260,59 +1660,108 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
     }, 150);
   };
 
+  // Linked Prospect — smart-button style, shared by the Opportunity and Proposal
+  // workspace headers (Odoo/Salesforce pattern: top of page, icon + label).
+  const linkedProspectBadges = (proposal.linkedPreviousProspectId || proposal.linkedNextProspectId) && (
+    <div className="flex items-center gap-2 flex-wrap">
+      {proposal.linkedPreviousProspectId && (() => {
+        const prevProspect = allProposals?.find(p => p.id === proposal.linkedPreviousProspectId);
+        return (
+          <button
+            onClick={() => prevProspect && onNavigateToProspect?.(prevProspect)}
+            disabled={!prevProspect}
+            title={`Renewed from ${prevProspect ? prevProspect.name : proposal.linkedPreviousProspectId}`}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-[11px] font-semibold text-blue-700 shadow-sm hover:bg-blue-50 transition-colors disabled:cursor-default disabled:hover:bg-white"
+          >
+            <History size={13} />
+            <span>Renewed from {prevProspect ? prevProspect.name : proposal.linkedPreviousProspectId}</span>
+          </button>
+        );
+      })()}
+      {proposal.linkedNextProspectId && (() => {
+        const nextProspect = allProposals?.find(p => p.id === proposal.linkedNextProspectId);
+        return (
+          <button
+            onClick={() => nextProspect && onNavigateToProspect?.(nextProspect)}
+            disabled={!nextProspect}
+            title={`Renewed into ${nextProspect ? nextProspect.name : proposal.linkedNextProspectId}`}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-200 rounded-lg text-[11px] font-semibold text-emerald-700 shadow-sm hover:bg-emerald-50 transition-colors disabled:cursor-default disabled:hover:bg-white"
+          >
+            <History size={13} />
+            <span>Renewed into {nextProspect ? nextProspect.name : proposal.linkedNextProspectId}</span>
+          </button>
+        );
+      })()}
+    </div>
+  );
+
   return (
     <div className="flex flex-col h-full bg-[#fafafa]">
-      {proposal.linkedPreviousProspectId && (
-        <div className="px-6 pt-4 max-w-7xl mx-auto w-full">
-          <div className="px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-[11px] text-blue-800 font-semibold flex items-center gap-1.5">
-            <History size={12} />
-            Renewed from last year's Prospect: <span className="font-mono">{proposal.linkedPreviousProspectId}</span>
-          </div>
-        </div>
-      )}
-      {!selectedChild ? (
-        // ==========================================
-        // OPPORTUNITY (COMMERCIAL) WORKSPACE
-        // ==========================================
-        <div className="p-6 max-w-7xl mx-auto w-full flex-1">
-          {/* Header */}
-          <div className="flex items-center gap-3 mb-4">
-            <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-full border border-gray-200 bg-white shadow-sm text-gray-500">
+      {/* Shared Header + Tabs — identical across the Opportunity and Proposal tabs */}
+      <div className={`px-6 pt-6 mx-auto w-full ${selectedChild ? 'max-w-[1600px]' : 'max-w-7xl'}`}>
+        <div className="mb-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onBack}
+              className="p-2 hover:bg-gray-100 rounded-full border border-gray-200 bg-white shadow-sm text-gray-500"
+            >
               <ArrowLeft size={16} />
             </button>
             <span className="text-xs text-gray-400 font-mono">{proposal.id}</span>
           </div>
-          {/* Top Tabs */}
-          <div className="flex border-b border-gray-200 mb-6">
-            {([
-              { id: 'Opportunity', label: 'Opportunity', icon: TrendingUp },
-              { id: 'Proposal', label: 'Proposal', icon: FileText }
-            ] as const).map(tab => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => {
-                    if (tab.id === 'Proposal') {
-                      setSelectedChild(childProposals.find(p => p.isCurrent) || childProposals[0] || null);
-                      setActiveWorkspaceTab('proposal');
+          {linkedProspectBadges && (
+            <div className="mt-2">
+              {linkedProspectBadges}
+            </div>
+          )}
+        </div>
+        {/* Top Tabs */}
+        <div className="flex border-b border-gray-200 mb-6">
+          {([
+            { id: 'Opportunity', label: 'Opportunity', icon: TrendingUp },
+            { id: 'Proposal', label: 'Proposal', icon: FileText }
+          ] as const).map(tab => {
+            const Icon = tab.icon;
+            const proposalLocked = tab.id === 'Proposal' && editedOpportunity.probability < 100;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  if (tab.id === 'Proposal') {
+                    if (editedOpportunity.probability < 100) {
+                      alert('This Opportunity must reach 100% probability before a Proposal can be created.');
+                      return;
                     }
-                    setActiveProspectTab(tab.id);
-                  }}
-                  id={`tab-${tab.id.toLowerCase()}`}
-                  className={`px-5 py-3 text-xs font-bold transition-all relative flex items-center gap-2 whitespace-nowrap ${
-                    activeProspectTab === tab.id 
-                      ? 'text-orange-500 font-black border-b-2 border-orange-500' 
+                    setSelectedChild(childProposals.find(p => p.isCurrent) || childProposals[0] || null);
+                    setActiveWorkspaceTab('proposal');
+                  } else {
+                    setSelectedChild(null);
+                  }
+                  setActiveProspectTab(tab.id);
+                }}
+                id={`tab-${tab.id.toLowerCase()}`}
+                title={proposalLocked ? 'Reach 100% probability to unlock the Proposal tab' : undefined}
+                className={`px-5 py-3 text-xs font-bold transition-all relative flex items-center gap-2 whitespace-nowrap ${
+                  proposalLocked
+                    ? 'text-gray-300 cursor-not-allowed'
+                    : activeProspectTab === tab.id
+                      ? 'text-orange-500 font-black border-b-2 border-orange-500'
                       : 'text-gray-400 hover:text-gray-600'
-                  }`}
-                >
-                  <Icon size={14} className={activeProspectTab === tab.id ? 'text-orange-500' : 'text-gray-400'} />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
+                }`}
+              >
+                <Icon size={14} className={proposalLocked ? 'text-gray-300' : activeProspectTab === tab.id ? 'text-orange-500' : 'text-gray-400'} />
+                <span>{tab.label}</span>
+                {proposalLocked && <Lock size={11} className="text-gray-300" />}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      {!selectedChild ? (
+        // ==========================================
+        // OPPORTUNITY (COMMERCIAL) WORKSPACE
+        // ==========================================
+        <div className="px-6 pb-6 max-w-7xl mx-auto w-full flex-1">
           <div className="flex flex-col gap-6">
 
               {/* Title + Edit controls */}
@@ -1342,10 +1791,25 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                       </button>
                     </>
                   ) : (
-                    <button onClick={() => setIsEditMode(true)} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5">
-                      <Edit size={14} />
-                      <span>Edit</span>
-                    </button>
+                    <>
+                      <button
+                        onClick={handleDeleteOpportunity}
+                        disabled={editedOpportunity.probability === 100 && currentRole !== 'Admin'}
+                        title={editedOpportunity.probability === 100 && currentRole !== 'Admin' ? 'Only Admin can delete a completed (100%) opportunity' : undefined}
+                        className={`px-4 py-2 border rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 ${
+                          editedOpportunity.probability === 100 && currentRole !== 'Admin'
+                            ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                            : 'bg-white hover:bg-red-50 border-gray-200 hover:border-red-200 text-red-600'
+                        }`}
+                      >
+                        <Trash2 size={14} />
+                        <span>Delete</span>
+                      </button>
+                      <button onClick={() => setIsEditMode(true)} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5">
+                        <Edit size={14} />
+                        <span>Edit</span>
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -1418,19 +1882,42 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                           </div>
                         </div>
                         <input type="text" value={companySearch} onChange={e => setCompanySearch(e.target.value)} placeholder="Search by name..." className="w-full max-w-sm px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50" />
-                        <select value={editedOpportunity.company} onChange={e => setEditedOpportunity({...editedOpportunity, company: e.target.value})} className="w-full max-w-sm px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50">
+                        <select
+                          value={editedOpportunity.company}
+                          onChange={e => {
+                            const chosen = filteredCompanyOptions.find(o => o.label === e.target.value);
+                            setEditedOpportunity({...editedOpportunity, company: e.target.value, masterType: chosen?.masterType || editedOpportunity.masterType});
+                          }}
+                          className="w-full max-w-sm px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50"
+                        >
                           {!filteredCompanyOptions.some(o => o.label === editedOpportunity.company) && editedOpportunity.company && (
                             <option value={editedOpportunity.company}>{editedOpportunity.company} (not in {companyEntityType}/{companySource} list)</option>
                           )}
                           {filteredCompanyOptions.length === 0 && !editedOpportunity.company && <option value="">No matches</option>}
-                          {filteredCompanyOptions.map(o => <option key={o.id} value={o.label}>{o.label}</option>)}
+                          {filteredCompanyOptions.map(o => <option key={o.id} value={o.label}>{o.label}{o.masterType === 'Lapsed Customer' ? ' (Lapsed)' : ''}</option>)}
                         </select>
                       </div>
                     ) : (
                       <div className="flex items-center gap-2 px-2.5 py-1.5">
                         <span className="text-xs font-semibold text-gray-800">{editedOpportunity.company}</span>
                         <span className="text-[9px] font-bold uppercase tracking-wide bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{companyEntityType}</span>
-                        <span className="text-[9px] font-bold uppercase tracking-wide bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">{companySource}</span>
+                        <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${
+                          editedOpportunity.masterType === 'Lapsed Customer' ? 'bg-red-50 text-red-600' :
+                          editedOpportunity.masterType === 'Lead' ? 'bg-orange-50 text-orange-600' :
+                          'bg-emerald-50 text-emerald-600'
+                        }`}>{editedOpportunity.masterType || 'Customer'}</span>
+                      </div>
+                    )}
+                    {/* Only surfaces after a 100% probability has actually been saved — not while still being edited in the draft */}
+                    {proposal.probability === 100 && proposal.masterType === 'Lead' && (
+                      <div className="mt-2">
+                        <button
+                          onClick={handleConvertLeadToCustomer}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5"
+                        >
+                          <CheckCircle2 size={13} />
+                          <span>Convert to Customer</span>
+                        </button>
                       </div>
                     )}
                   </div>
@@ -1546,7 +2033,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                   <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Product Category</label>
                   <input type="text" value={editedOpportunity.productCategory} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-semibold outline-none cursor-not-allowed" />
                 </div>
-                <FieldView label={proposal.linkedPreviousProspectId ? "Detailed Product Item (Last Year's Selection — For Reference)" : "Detailed Product Item"} editing={isEditMode} viewValue={editedOpportunity.detailedProductItem || '—'} className="md:col-span-2">
+                <FieldView label={editedOpportunity.businessType === 'Renewal' ? "Product Item Details (Copied from Previous Proposal)" : "Detailed Product Item"} editing={isEditMode} viewValue={editedOpportunity.detailedProductItem || '—'} className="md:col-span-2">
                   <select
                     value={editedOpportunity.detailedProductItem || ''}
                     onChange={e => setEditedOpportunity({...editedOpportunity, detailedProductItem: e.target.value})}
@@ -1591,7 +2078,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                           ) : <span>{editedOpportunity.salesRep1}</span>}
                         </td>
                         <td className="p-2">{isEditMode ? (
-                          <input type="number" value={editedOpportunity.split1} onChange={e => setEditedOpportunity({...editedOpportunity, split1: Number(e.target.value)})} className="w-full p-1 border border-gray-200 rounded text-xs text-right font-mono" />
+                          <input type="number" max={100} value={editedOpportunity.split1} onChange={e => setEditedOpportunity({...editedOpportunity, split1: Math.min(100, Number(e.target.value))})} className="w-full p-1 border border-gray-200 rounded text-xs text-right font-mono" />
                         ) : <span className="block text-right font-mono">{editedOpportunity.split1}</span>}</td>
                       </tr>
                       {(isEditMode ? numSalesReps >= 2 : !!editedOpportunity.salesRep2) && (
@@ -1605,7 +2092,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                             ) : <span>{editedOpportunity.salesRep2}</span>}
                           </td>
                           <td className="p-2">{isEditMode ? (
-                            <input type="number" value={editedOpportunity.split2} onChange={e => setEditedOpportunity({...editedOpportunity, split2: Number(e.target.value)})} className="w-full p-1 border border-gray-200 rounded text-xs text-right font-mono" />
+                            <input type="number" max={100} value={editedOpportunity.split2} onChange={e => setEditedOpportunity({...editedOpportunity, split2: Math.min(100, Number(e.target.value))})} className="w-full p-1 border border-gray-200 rounded text-xs text-right font-mono" />
                           ) : <span className="block text-right font-mono">{editedOpportunity.split2}</span>}</td>
                         </tr>
                       )}
@@ -1620,7 +2107,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                             ) : <span>{editedOpportunity.salesRep3}</span>}
                           </td>
                           <td className="p-2">{isEditMode ? (
-                            <input type="number" value={editedOpportunity.split3} onChange={e => setEditedOpportunity({...editedOpportunity, split3: Number(e.target.value)})} className="w-full p-1 border border-gray-200 rounded text-xs text-right font-mono" />
+                            <input type="number" max={100} value={editedOpportunity.split3} onChange={e => setEditedOpportunity({...editedOpportunity, split3: Math.min(100, Number(e.target.value))})} className="w-full p-1 border border-gray-200 rounded text-xs text-right font-mono" />
                           ) : <span className="block text-right font-mono">{editedOpportunity.split3}</span>}</td>
                         </tr>
                       )}
@@ -1643,25 +2130,42 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                 Product Opportunity Evaluation
               </h3>
 
+              {/* Est Sales Credit — computed from the product's Sales Credit Calculation Rule (Product Config) */}
+              <div className="mb-5 flex items-center gap-3 px-4 py-3 rounded-lg bg-gradient-to-r from-orange-50 to-orange-100/50 border border-orange-200">
+                <Award size={18} className="text-orange-600 shrink-0" />
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-orange-700 block">Est Sales Credit</span>
+                  <span className="text-lg font-black text-orange-700 font-mono tabular-nums">
+                    {formatDecimal2(computeEstSalesCredit(selectedProduct?.salesCreditRule, evaluationValues))}
+                  </span>
+                </div>
+                {selectedProduct?.salesCreditRule && (
+                  <span className="ml-auto text-[10px] text-orange-600/70 font-semibold max-w-xs text-right hidden md:block">
+                    Rule: {selectedProduct.salesCreditRule}
+                  </span>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Vendor Column */}
                 <div className="border border-gray-200 rounded-lg p-4 bg-gray-50/50">
-                  <h4 className="text-xs font-bold text-gray-800 mb-3 uppercase tracking-wider flex items-center gap-1.5 border-b pb-2">
+                  <h4 className="text-xs font-bold text-gray-800 mb-3 uppercase tracking-wider flex items-center gap-1.5 border-b pb-2 flex-wrap">
                     <Building2 size={13} className="text-gray-500" />
                     Vendor Fields
+                    <span className="flex-1" />
+                    {selectedProduct?.vendorFields?.some((f: any) => f.visible && EVAL_FIELD_SPECS[f.name]?.type === 'mpf-lookup') && (
+                      <button type="button" onClick={() => openManageList('mpf')} className="text-[9px] text-orange-600 font-bold normal-case hover:underline flex items-center gap-0.5">
+                        <Settings size={9} /> Manage MPF Scheme
+                      </button>
+                    )}
+                    {selectedProduct?.vendorFields?.some((f: any) => f.visible && EVAL_FIELD_SPECS[f.name]?.type === 'insurer-lookup') && (
+                      <button type="button" onClick={() => openManageList('insurer')} className="text-[9px] text-orange-600 font-bold normal-case hover:underline flex items-center gap-0.5">
+                        <Settings size={9} /> Manage Insurer
+                      </button>
+                    )}
                   </h4>
                   <div className="space-y-3">
-                    {selectedProduct?.vendorFields?.filter((f: any) => f.visible).map((f: any) => (
-                      <FieldView key={f.name} label={f.name} required={f.required} editing={isEditMode} viewValue={evaluationValues[f.name] || '—'}>
-                        <input
-                          type="text"
-                          value={evaluationValues[f.name] || ''}
-                          onChange={e => handleSaveEvaluation({ ...evaluationValues, [f.name]: e.target.value })}
-                          placeholder={`Enter ${f.name}`}
-                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 font-medium"
-                        />
-                      </FieldView>
-                    ))}
+                    {selectedProduct?.vendorFields?.filter((f: any) => f.visible).map((f: any) => renderEvalField(f))}
                     {(!selectedProduct?.vendorFields || selectedProduct.vendorFields.filter((f: any) => f.visible).length === 0) && (
                       <p className="text-gray-400 text-xs italic">No visible vendor fields are configured for this product.</p>
                     )}
@@ -1675,17 +2179,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                     Premium Fields
                   </h4>
                   <div className="space-y-3">
-                    {selectedProduct?.premiumFields?.filter((f: any) => f.visible).map((f: any) => (
-                      <FieldView key={f.name} label={f.name} required={f.required} editing={isEditMode} viewValue={evaluationValues[f.name] || '—'}>
-                        <input
-                          type="text"
-                          value={evaluationValues[f.name] || ''}
-                          onChange={e => handleSaveEvaluation({ ...evaluationValues, [f.name]: e.target.value })}
-                          placeholder={`Enter ${f.name}`}
-                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 font-medium font-mono"
-                        />
-                      </FieldView>
-                    ))}
+                    {selectedProduct?.premiumFields?.filter((f: any) => f.visible).map((f: any) => renderEvalField(f))}
                     {(!selectedProduct?.premiumFields || selectedProduct.premiumFields.filter((f: any) => f.visible).length === 0) && (
                       <p className="text-gray-400 text-xs italic">No visible premium fields are configured for this product.</p>
                     )}
@@ -1699,20 +2193,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                     Date & Transfer Fields
                   </h4>
                   <div className="space-y-3">
-                    {selectedProduct?.dateTransferFields?.filter((f: any) => f.visible).map((f: any) => {
-                      const isDateField = f.name.toLowerCase().includes('date');
-                      return (
-                        <FieldView key={f.name} label={f.name} required={f.required} editing={isEditMode} viewValue={evaluationValues[f.name] || '—'}>
-                          <input
-                            type={isDateField ? "date" : "text"}
-                            value={evaluationValues[f.name] || ''}
-                            onChange={e => handleSaveEvaluation({ ...evaluationValues, [f.name]: e.target.value })}
-                            placeholder={`Enter ${f.name}`}
-                            className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 font-medium font-mono"
-                          />
-                        </FieldView>
-                      );
-                    })}
+                    {selectedProduct?.dateTransferFields?.filter((f: any) => f.visible).map((f: any) => renderEvalField(f))}
                     {(!selectedProduct?.dateTransferFields || selectedProduct.dateTransferFields.filter((f: any) => f.visible).length === 0) && (
                       <p className="text-gray-400 text-xs italic">No visible date & transfer fields are configured for this product.</p>
                     )}
@@ -1721,30 +2202,204 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
               </div>
             </div>
 
+            {/* 6. Report & Dashboard */}
+            <div className="bg-white p-5 rounded-lg border border-gray-200 shadow-sm">
+              <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-4 border-b border-gray-100 pb-1.5 flex items-center gap-1.5">
+                <BarChart2 size={14} className="text-orange-500" />
+                Report &amp; Dashboard
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs mb-4">
+                <div>
+                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Sales Rep 1 Gross Amount</label>
+                  {isEditMode ? (
+                    <input type="number" value={editedOpportunity.salesRep1GrossAmount} onChange={e => setEditedOpportunity({...editedOpportunity, salesRep1GrossAmount: Number(e.target.value)})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white font-mono focus:outline-none focus:ring-1 focus:ring-orange-500" />
+                  ) : (
+                    <input type="text" value={`HK$${editedOpportunity.salesRep1GrossAmount.toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
+                  )}
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Sales Rep 1 Net Amount</label>
+                  {isEditMode ? (
+                    <input type="number" value={editedOpportunity.salesRep1NetAmount} onChange={e => setEditedOpportunity({...editedOpportunity, salesRep1NetAmount: Number(e.target.value)})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white font-mono focus:outline-none focus:ring-1 focus:ring-orange-500" />
+                  ) : (
+                    <input type="text" value={`HK$${editedOpportunity.salesRep1NetAmount.toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
+                  )}
+                </div>
+                {(isEditMode ? numSalesReps >= 2 : !!editedOpportunity.salesRep2) && (
+                  <>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Sales Rep 2 Gross Amount</label>
+                      {isEditMode ? (
+                        <input type="number" value={editedOpportunity.salesRep2GrossAmount} onChange={e => setEditedOpportunity({...editedOpportunity, salesRep2GrossAmount: Number(e.target.value)})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white font-mono focus:outline-none focus:ring-1 focus:ring-orange-500" />
+                      ) : (
+                        <input type="text" value={`HK$${editedOpportunity.salesRep2GrossAmount.toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
+                      )}
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Sales Rep 2 Net Amount</label>
+                      {isEditMode ? (
+                        <input type="number" value={editedOpportunity.salesRep2NetAmount} onChange={e => setEditedOpportunity({...editedOpportunity, salesRep2NetAmount: Number(e.target.value)})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white font-mono focus:outline-none focus:ring-1 focus:ring-orange-500" />
+                      ) : (
+                        <input type="text" value={`HK$${editedOpportunity.salesRep2NetAmount.toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
+                      )}
+                    </div>
+                  </>
+                )}
+                {(isEditMode ? numSalesReps >= 3 : !!editedOpportunity.salesRep3) && (
+                  <>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Sales Rep 3 Gross Amount</label>
+                      {isEditMode ? (
+                        <input type="number" value={editedOpportunity.salesRep3GrossAmount} onChange={e => setEditedOpportunity({...editedOpportunity, salesRep3GrossAmount: Number(e.target.value)})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white font-mono focus:outline-none focus:ring-1 focus:ring-orange-500" />
+                      ) : (
+                        <input type="text" value={`HK$${editedOpportunity.salesRep3GrossAmount.toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
+                      )}
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Sales Rep 3 Net Amount</label>
+                      {isEditMode ? (
+                        <input type="number" value={editedOpportunity.salesRep3NetAmount} onChange={e => setEditedOpportunity({...editedOpportunity, salesRep3NetAmount: Number(e.target.value)})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white font-mono focus:outline-none focus:ring-1 focus:ring-orange-500" />
+                      ) : (
+                        <input type="text" value={`HK$${editedOpportunity.salesRep3NetAmount.toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs pt-3 border-t border-gray-100">
+                <div>
+                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Oppty Reject Date</label>
+                  {isEditMode ? (
+                    <input type="date" value={editedOpportunity.opptyRejectDate} onChange={e => setEditedOpportunity({...editedOpportunity, opptyRejectDate: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white font-mono focus:outline-none focus:ring-1 focus:ring-orange-500" />
+                  ) : (
+                    <input type="text" value={editedOpportunity.opptyRejectDate || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
+                  )}
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Oppty Reject Frequency</label>
+                  {isEditMode ? (
+                    <input type="number" min={0} value={editedOpportunity.opptyRejectFrequency} onChange={e => setEditedOpportunity({...editedOpportunity, opptyRejectFrequency: Number(e.target.value)})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white font-mono focus:outline-none focus:ring-1 focus:ring-orange-500" />
+                  ) : (
+                    <input type="text" value={String(editedOpportunity.opptyRejectFrequency)} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* 7. Product File Requirements */}
+            <div className="bg-white p-5 rounded-lg border border-gray-200 shadow-sm">
+              <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-4 border-b border-gray-100 pb-1.5 flex items-center gap-1.5">
+                <FileUp size={14} className="text-orange-500" />
+                Product File Requirements
+              </h3>
+              <div className="flex items-center gap-3 mb-4">
+                <span className="text-xs font-semibold text-gray-700">Is Filter By Product Item</span>
+                <button
+                  type="button"
+                  disabled={!isEditMode}
+                  onClick={() => setEditedOpportunity({...editedOpportunity, isFilterByProductItem: !editedOpportunity.isFilterByProductItem})}
+                  className={`relative w-10 h-5 rounded-full transition-colors ${editedOpportunity.isFilterByProductItem ? 'bg-emerald-500' : 'bg-gray-300'} ${!isEditMode ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${editedOpportunity.isFilterByProductItem ? 'translate-x-5' : ''}`} />
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                      <th className="text-left py-2 pr-3">Name</th>
+                      <th className="text-left py-2 pr-3">Type</th>
+                      <th className="text-left py-2 pr-3">Related Product Item</th>
+                      <th className="text-left py-2 pr-3">Check Stage</th>
+                      <th className="text-left py-2 pr-3">File</th>
+                      {isEditMode && <th className="text-right py-2 w-10"></th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {editedOpportunity.productFileRequirements.map((row, idx) => (
+                      <tr key={row.id}>
+                        <td className="py-2 pr-3">
+                          {isEditMode ? (
+                            <input type="text" value={row.name} onChange={e => updateFileRequirement(idx, { name: e.target.value })} placeholder="e.g. Appointment Letter" className="w-full px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-orange-500" />
+                          ) : <span className="font-semibold text-gray-800">{row.name}</span>}
+                        </td>
+                        <td className="py-2 pr-3">
+                          {isEditMode ? (
+                            <select value={row.type} onChange={e => updateFileRequirement(idx, { type: e.target.value as 'Compulsory' | 'Optional' })} className="w-full px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-orange-500">
+                              <option value="Compulsory">Compulsory</option>
+                              <option value="Optional">Optional</option>
+                            </select>
+                          ) : (
+                            <span className={`inline-flex px-2 py-0.5 border text-[10px] font-black rounded uppercase tracking-wider ${row.type === 'Compulsory' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>{row.type}</span>
+                          )}
+                        </td>
+                        <td className="py-2 pr-3">
+                          {isEditMode ? (
+                            <select value={row.relatedProductItem} onChange={e => updateFileRequirement(idx, { relatedProductItem: e.target.value })} className="w-full px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-orange-500">
+                              <option value="">Please select</option>
+                              {CONFIG_PRODUCT_NAMES.map(pName => <option key={pName} value={pName}>{pName}</option>)}
+                            </select>
+                          ) : <span className="text-gray-700">{row.relatedProductItem || '—'}</span>}
+                        </td>
+                        <td className="py-2 pr-3">
+                          {isEditMode ? (
+                            <select value={row.checkStage} onChange={e => updateFileRequirement(idx, { checkStage: e.target.value })} className="w-full px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-orange-500">
+                              <option value="">Please select</option>
+                              {['10%', '30%', '70%', '90%', 'Won 100%'].map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          ) : <span className="text-gray-700 font-mono">{row.checkStage || '—'}</span>}
+                        </td>
+                        <td className="py-2 pr-3">
+                          <label className={`inline-flex items-center gap-1.5 text-[11px] font-semibold ${isEditMode ? 'text-orange-600 hover:text-orange-700 cursor-pointer' : 'text-gray-400'}`}>
+                            <FileUp size={12} />
+                            <span className="truncate max-w-[120px]">{row.fileName || 'Upload'}</span>
+                            {isEditMode && (
+                              <input type="file" className="hidden" onChange={e => {
+                                const file = e.target.files?.[0];
+                                if (file) updateFileRequirement(idx, { fileName: file.name });
+                              }} />
+                            )}
+                          </label>
+                        </td>
+                        {isEditMode && (
+                          <td className="py-2 text-right">
+                            <button onClick={() => removeFileRequirement(idx)} className="p-1 text-gray-400 hover:text-red-600 rounded transition-colors">
+                              <Trash2 size={13} />
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                    {editedOpportunity.productFileRequirements.length === 0 && (
+                      <tr><td colSpan={isEditMode ? 6 : 5} className="py-4 text-center text-gray-400 italic">No document requirements configured.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {isEditMode && (
+                <button onClick={addFileRequirement} className="mt-3 flex items-center gap-1 text-orange-600 hover:text-orange-700 text-[11px] font-bold">
+                  <Plus size={12} />
+                  <span>Add Document Requirement</span>
+                </button>
+              )}
+            </div>
+
             </div>
         </div>
       ) : (
         // ==========================================
         // PROPOSAL WORKSPACE (STANDALONE WORKSPACE)
         // ==========================================
-        <div className="p-4 max-w-[1600px] mx-auto w-full flex-1 flex flex-col gap-4 text-xs">
+        <div className="px-4 pb-4 max-w-[1600px] mx-auto w-full flex-1 flex flex-col gap-4 text-xs">
           {/* Top Status Chevron Progress Bar (Odoo 19 Style) */}
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm flex flex-col md:flex-row md:items-center justify-between p-3 gap-3">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => { setSelectedChild(null); setActiveProspectTab('Opportunity'); }}
-                className="p-1.5 hover:bg-gray-100 rounded border border-gray-200 bg-white text-gray-500 flex items-center justify-center transition-colors"
-                title="Back to Opportunity"
-              >
-                <ArrowLeft size={14} />
-              </button>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 font-mono font-black text-[10px] rounded">{selectedChild.id}</span>
-                  <h2 className="text-sm font-bold text-gray-900">{selectedChild.name}</h2>
-                </div>
-                <p className="text-[10px] text-gray-500">Opportunity: <span className="font-semibold text-gray-700">{editedOpportunity.name}</span> · Customer: {editedOpportunity.company}</p>
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-3 flex flex-col gap-3">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 font-mono font-black text-[10px] rounded">{selectedChild.id}</span>
+                <h2 className="text-sm font-bold text-gray-900">{selectedChild.name}</h2>
               </div>
+              <p className="text-[10px] text-gray-500">Opportunity: <span className="font-semibold text-gray-700">{editedOpportunity.name}</span> · Customer: {editedOpportunity.company}</p>
             </div>
 
             {/* Chevron Trail */}
@@ -1789,6 +2444,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
               })}
             </div>
           </div>
+          </div>
 
           {/* Action Ribbon */}
           <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
@@ -1832,18 +2488,13 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                 <span>Download SOB Report</span>
               </button>
               {selectedChild.status === 'Approved' && (
-                <button 
-                  onClick={() => handleConvertToPolicy(selectedChild)} 
+                <button
+                  onClick={() => handleConvertToPolicy(selectedChild)}
                   className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold transition-all shadow-sm flex items-center gap-1.5"
                 >
                   <Check size={13} />
                   <span>Convert to Policy</span>
                 </button>
-              )}
-              {selectedChild.policyId && (
-                <div className="px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded font-bold font-mono">
-                  Linked Policy: {selectedChild.policyId}
-                </div>
               )}
             </div>
           </div>
@@ -2010,7 +2661,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                         <div className="bg-gray-50/50 border border-gray-200 rounded-lg p-3">
                           <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1"><DollarSign size={11} /> Commission Rate</span>
                           {isProposalEditMode ? (
-                            <input type="number" value={selectedChild.commissionRate} onChange={e => setSelectedChild({...selectedChild, commissionRate: Number(e.target.value)})} className="w-full mt-1 px-2 py-1 border border-gray-200 rounded text-sm font-bold text-emerald-700 bg-white focus:border-blue-500 outline-none" />
+                            <input type="number" max={100} value={selectedChild.commissionRate} onChange={e => setSelectedChild({...selectedChild, commissionRate: Math.min(100, Number(e.target.value))})} className="w-full mt-1 px-2 py-1 border border-gray-200 rounded text-sm font-bold text-emerald-700 bg-white focus:border-blue-500 outline-none" />
                           ) : (
                             <div className="text-sm font-bold text-emerald-700 mt-1">{selectedChild.commissionRate}%</div>
                           )}
@@ -2096,7 +2747,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                       <div>
                         <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Sales Percentage</label>
                         {isProposalEditMode ? (
-                          <input type="number" value={selectedChild.salesPercentage ?? 100} onChange={e => setSelectedChild({...selectedChild, salesPercentage: Number(e.target.value)})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                          <input type="number" max={100} value={selectedChild.salesPercentage ?? 100} onChange={e => setSelectedChild({...selectedChild, salesPercentage: Math.min(100, Number(e.target.value))})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
                         ) : (
                           <input type="text" value={`${selectedChild.salesPercentage ?? 100}%`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 font-mono cursor-not-allowed outline-none" />
                         )}
@@ -2106,7 +2757,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                         {isProposalEditMode ? (
                           <select
                             value={selectedChild.renewRequired || ''}
-                            onChange={e => { setSelectedChild({...selectedChild, renewRequired: e.target.value}); setRenewRequiredError(false); }}
+                            onChange={e => { setSelectedChild({...selectedChild, renewRequired: e.target.value as ChildProposal['renewRequired']}); setRenewRequiredError(false); }}
                             className={`w-full px-2.5 py-1.5 border rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none ${renewRequiredError ? 'border-red-400' : 'border-gray-200'}`}
                           >
                             <option value="" disabled>Please select</option>
@@ -2114,7 +2765,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                             <option value="No">No</option>
                           </select>
                         ) : (
-                          <span className={`inline-flex px-2.5 py-1 border text-[10px] font-black rounded uppercase tracking-wider ${selectedChild.renewRequired === 'Yes' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : selectedChild.renewRequired ? 'bg-gray-50 text-gray-600 border-gray-200' : 'bg-red-50 text-red-500 border-red-200'}`}>{selectedChild.renewRequired || 'Not Set'}</span>
+                          <span className={`inline-flex px-2.5 py-1 border text-[10px] font-black rounded uppercase tracking-wider ${selectedChild.renewRequired === 'Yes' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : selectedChild.renewRequired ? 'bg-gray-50 text-gray-600 border-gray-200' : 'bg-red-50 text-red-500 border-red-200'}`}>{selectedChild.renewRequired || 'Please select'}</span>
                         )}
                         {renewRequiredError && <p className="mt-1 text-[10px] text-red-500 font-semibold">Renew Required must be set before converting to policy.</p>}
                       </div>
@@ -2913,6 +3564,89 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, onBack
                 </div>
               ))}
               {auditLogs.length === 0 && <p className="p-6 text-xs text-gray-400 text-center">No audit history yet.</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manage MPF Scheme / Manage Insurer popup */}
+      {manageListTarget && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-md overflow-hidden flex flex-col animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-gray-150 px-5 py-3.5 bg-gray-50">
+              <span className="text-xs font-black uppercase text-gray-900 tracking-wider">
+                Manage {manageListLabel}
+              </span>
+              <button
+                onClick={closeManageListPopup}
+                className="p-1 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 cursor-pointer"
+              >
+                <XCircle size={15} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase text-gray-400 block">
+                  {manageListMode === 'create' ? `Add New ${manageListLabel}` : `Rename Selected ${manageListLabel}`}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={manageListInput}
+                    onChange={(e) => setManageListInput(e.target.value)}
+                    placeholder={manageListTarget === 'mpf' ? 'e.g. Manulife MPF (Global Select) Plan' : 'e.g. AIA International'}
+                    className="flex-1 px-3 py-1.5 border rounded-lg border-gray-300 focus:border-orange-500 outline-none text-xs font-bold text-gray-800 bg-white h-9"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleManageListSave}
+                    className="px-4 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-bold uppercase text-[9px] rounded-lg shadow-sm flex items-center justify-center gap-1 cursor-pointer h-9"
+                  >
+                    {manageListMode === 'create' ? 'Add' : 'Save'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5 max-h-60 overflow-y-auto border rounded-xl divide-y p-2 bg-gray-50/50">
+                {manageListItems.map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between py-1.5 px-2 hover:bg-white rounded transition-colors text-xs font-semibold text-gray-700">
+                    <span>{item}</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManageListInput(item);
+                          setManageListMode('rename');
+                          setManageListOriginalValue(item);
+                        }}
+                        className="p-1 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded"
+                        title={`Rename ${manageListLabel}`}
+                      >
+                        <Edit size={11} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleManageListDelete(item)}
+                        className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                        title={`Delete ${manageListLabel}`}
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-gray-150 px-5 py-3 bg-gray-50 flex justify-end">
+              <button
+                type="button"
+                onClick={closeManageListPopup}
+                className="px-4 py-1.5 bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 font-bold uppercase text-[9px] rounded-lg cursor-pointer"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

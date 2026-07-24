@@ -211,12 +211,37 @@ export interface Proposal {
   sourceSystem: string;
   linkedLeadId?: string;
   leadTemperature?: 'Cold' | 'Warm' | 'Hot';
+  masterType?: 'Lead' | 'Customer' | 'Lapsed Customer'; // Whether the linked party is a Lead, an existing Customer, or a Lapsed Customer — drives the reach-100% conversion rules
   linkedCustomerId?: string;
   linkedPolicyId?: string;
   linkedInvoiceId?: string;
   linkedPreviousPolicyId?: string;
-  linkedPreviousProspectId?: string; // Link to last year's Prospect this renewal was auto-created from
+  linkedPreviousProspectId?: string; // Linked Prospect (backward) — last year's Prospect this renewal was auto-created from
+  linkedNextProspectId?: string; // Linked Prospect (forward) — the renewal Prospect auto-created from this one
   detailedProductItem?: string; // Detailed Product Item under the GMI Product Group (7-layer product hierarchy)
+
+  // Report & Dashboard
+  salesRep1GrossAmount?: number;
+  salesRep1NetAmount?: number;
+  salesRep2GrossAmount?: number;
+  salesRep2NetAmount?: number;
+  salesRep3GrossAmount?: number;
+  salesRep3NetAmount?: number;
+  opptyRejectDate?: string;
+  opptyRejectFrequency?: number;
+
+  // Product File Requirements
+  isFilterByProductItem?: boolean;
+  productFileRequirements?: ProductFileRequirement[];
+}
+
+export interface ProductFileRequirement {
+  id: string;
+  name: string;
+  type: 'Compulsory' | 'Optional';
+  relatedProductItem: string;
+  checkStage: string;
+  fileName?: string;
 }
 
 export interface CRMRemark {

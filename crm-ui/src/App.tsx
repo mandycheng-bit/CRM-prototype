@@ -12,13 +12,21 @@ export default function App() {
   const [activeModule, setActiveModule] = useState<ModuleId>('perspective-pipeline');
   const [proposals, setProposals] = useState<Proposal[]>(MOCK_PROPOSALS);
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
+  const [pipelineBusinessType, setPipelineBusinessType] = useState<'NB' | 'Renewal'>('NB');
+  // Demo-only role switcher — this prototype has no real auth/permission system;
+  // this lets a PM demo the "only Admin can delete a 100% Opportunity" rule.
+  const [currentRole, setCurrentRole] = useState<'Sales Rep' | 'Admin'>('Sales Rep');
 
   const renderModule = () => {
     if (activeModule === 'perspective-pipeline' && selectedProposal) {
       return (
         <ProposalDetail
           proposal={selectedProposal}
-          onBack={() => setSelectedProposal(null)}
+          allProposals={proposals}
+          onBack={() => {
+            setPipelineBusinessType(selectedProposal.businessType === 'Renewal' ? 'Renewal' : 'NB');
+            setSelectedProposal(null);
+          }}
           onSave={(p) => {
             setProposals(prev => prev.map(x => x.id === p.id ? p : x));
             setSelectedProposal(p);
@@ -26,11 +34,14 @@ export default function App() {
           onCreateRenewal={(renewalProspect) => {
             setProposals(prev => [...prev, renewalProspect]);
           }}
+          onNavigateToProspect={(p) => setSelectedProposal(p)}
+          onDelete={(id) => setProposals(prev => prev.filter(p => p.id !== id))}
+          currentRole={currentRole}
         />
       );
     }
     if (activeModule === 'perspective-pipeline') {
-      return <ProposalPipeline proposals={proposals} onProposalClick={setSelectedProposal} />;
+      return <ProposalPipeline proposals={proposals} onProposalClick={setSelectedProposal} initialBusinessType={pipelineBusinessType} />;
     }
     return <ProductsConfiguration />;
   };
@@ -55,7 +66,18 @@ export default function App() {
             <ChevronRight size={14} className="text-gray-300" />
             <div className="text-sm font-bold text-gray-900">{MODULE_LABEL[activeModule]}</div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center bg-gray-100 rounded-lg p-1" title="Demo-only role switcher — controls whether Delete is allowed on a 100% Opportunity">
+              {(['Sales Rep', 'Admin'] as const).map(role => (
+                <button
+                  key={role}
+                  onClick={() => setCurrentRole(role)}
+                  className={`px-3 py-1 text-xs font-semibold rounded transition-all ${currentRole === role ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  {role}
+                </button>
+              ))}
+            </div>
             <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-xs font-bold text-gray-600">MC</div>
             <div className="text-right">
               <div className="text-xs font-bold text-gray-900">Demo User</div>

@@ -6,14 +6,15 @@ import { MoreHorizontal, Plus, Filter, Search, LayoutGrid, List as ListIcon, Che
 interface ProposalPipelineProps {
   onProposalClick: (proposal: Proposal) => void;
   proposals: Proposal[];
+  initialBusinessType?: 'NB' | 'Renewal';
 }
 
 const STAGES: ProposalStage[] = ['Draft', 'SOB', 'Finalize', 'Policy'];
 
-const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, proposals }) => {
+const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, proposals, initialBusinessType = 'NB' }) => {
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
   const [showLost, setShowLost] = useState(false);
-  const [businessTypeFilter, setBusinessTypeFilter] = useState<'NB' | 'Renewal'>('NB');
+  const [businessTypeFilter, setBusinessTypeFilter] = useState<'NB' | 'Renewal'>(initialBusinessType);
 
   // Unshadowed reference to the full, unfiltered list — a linked previous Prospect
   // may sit in a different stage/business-type bucket than the current filters show.
@@ -36,7 +37,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
         const totalValue = proposals.reduce((sum, p) => sum + p.expectedRevenueGross, 0);
 
         return (
-          <div key={stage} className="flex-shrink-0 w-72 flex flex-col">
+          <div key={stage} className="flex-1 min-w-[260px] flex flex-col">
             <div className="flex items-center justify-between mb-3 px-1">
               <div className="flex items-center gap-2">
                 <span className={`text-xs font-bold uppercase tracking-wider ${stage === 'Lost' ? 'text-red-500' : 'text-gray-500'}`}>{stage}</span>
@@ -59,7 +60,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                   <div 
                     key={proposal.id}
                     onClick={() => onProposalClick(proposal)}
-                    className={`bg-white p-4 rounded-lg border border-gray-200 shadow-sm hover:border-orange-500 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between h-[190px] ${proposal.stage === 'Lost' ? 'border-l-4 border-l-red-500' : 'border-t border-t-gray-100 hover:translate-y-[-2px]'}`}
+                    className={`bg-white p-4 rounded-lg border border-gray-200 shadow-sm hover:border-orange-500 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between min-h-[190px] ${proposal.stage === 'Lost' ? 'border-l-4 border-l-red-500' : 'border-t border-t-gray-100 hover:translate-y-[-2px]'}`}
                   >
                     <div className="flex-1 flex flex-col min-w-0">
                       <div className="flex justify-between items-start mb-2">
@@ -85,9 +86,21 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                           <button
                             onClick={(e) => { e.stopPropagation(); onProposalClick(prevProspect); }}
                             className="text-[9px] text-blue-500 hover:text-blue-700 hover:underline font-semibold truncate text-left mt-0.5"
-                            title={`Renewed from ${prevProspect.name}`}
+                            title={`Linked Prospect: ${prevProspect.name}`}
                           >
-                            ↳ Renewed from: {prevProspect.name}
+                            ↳ Linked Prospect: {prevProspect.name}
+                          </button>
+                        ) : null;
+                      })()}
+                      {proposal.linkedNextProspectId && (() => {
+                        const nextProspect = allProposals.find(p => p.id === proposal.linkedNextProspectId);
+                        return nextProspect ? (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onProposalClick(nextProspect); }}
+                            className="text-[9px] text-emerald-600 hover:text-emerald-800 hover:underline font-semibold truncate text-left mt-0.5"
+                            title={`Linked Prospect: ${nextProspect.name}`}
+                          >
+                            ↳ Linked Prospect: {nextProspect.name}
                           </button>
                         ) : null;
                       })()}
@@ -166,9 +179,21 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                         <button
                           onClick={(e) => { e.stopPropagation(); onProposalClick(prevProspect); }}
                           className="text-[9px] text-blue-500 hover:text-blue-700 hover:underline font-semibold text-left mt-0.5"
-                          title={`Renewed from ${prevProspect.name}`}
+                          title={`Linked Prospect: ${prevProspect.name}`}
                         >
-                          ↳ Renewed from: {prevProspect.name}
+                          ↳ Linked Prospect: {prevProspect.name}
+                        </button>
+                      ) : null;
+                    })()}
+                    {proposal.linkedNextProspectId && (() => {
+                      const nextProspect = allProposals.find(p => p.id === proposal.linkedNextProspectId);
+                      return nextProspect ? (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onProposalClick(nextProspect); }}
+                          className="text-[9px] text-emerald-600 hover:text-emerald-800 hover:underline font-semibold text-left mt-0.5"
+                          title={`Linked Prospect: ${nextProspect.name}`}
+                        >
+                          ↳ Linked Prospect: {nextProspect.name}
                         </button>
                       ) : null;
                     })()}
