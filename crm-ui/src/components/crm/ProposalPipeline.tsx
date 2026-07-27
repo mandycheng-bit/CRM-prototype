@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import type { Proposal, ProposalStage } from '../../types';
 import { MOCK_PROPOSALS } from '../../constants';
-import { MoreHorizontal, Plus, Filter, Search, LayoutGrid, List as ListIcon, ChevronRight } from 'lucide-react';
+import { MoreHorizontal, Plus, Filter, Search, LayoutGrid, List as ListIcon, ChevronRight, History } from 'lucide-react';
 
 interface ProposalPipelineProps {
   onProposalClick: (proposal: Proposal) => void;
@@ -74,36 +74,40 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                             </span>
                           )}
                         </div>
-                        <span className="text-[10px] text-gray-400 font-mono flex-shrink-0">{proposal.id}</span>
+                        {/* Linked Prospect indicators live in the header row (icon-only) so linked
+                            cards stay the same height as every other card in the column. */}
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {proposal.linkedPreviousProspectId && (() => {
+                            const prevProspect = allProposals.find(p => p.id === proposal.linkedPreviousProspectId);
+                            return prevProspect ? (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onProposalClick(prevProspect); }}
+                                className="text-blue-500 hover:text-blue-700"
+                                title={`Renewed from: ${prevProspect.name}`}
+                              >
+                                <History size={11} />
+                              </button>
+                            ) : null;
+                          })()}
+                          {proposal.linkedNextProspectId && (() => {
+                            const nextProspect = allProposals.find(p => p.id === proposal.linkedNextProspectId);
+                            return nextProspect ? (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); onProposalClick(nextProspect); }}
+                                className="text-emerald-600 hover:text-emerald-800"
+                                title={`Renewed into: ${nextProspect.name}`}
+                              >
+                                <History size={11} />
+                              </button>
+                            ) : null;
+                          })()}
+                          <span className="text-[10px] text-gray-400 font-mono">{proposal.id}</span>
+                        </div>
                       </div>
                       <h3 className="text-xs font-bold text-gray-900 mb-1 group-hover:text-orange-600 transition-colors truncate" title={proposal.name}>
                         {proposal.name}
                       </h3>
                       <p className="text-[11px] text-gray-500 truncate" title={proposal.client}>{proposal.client}</p>
-                      {proposal.linkedPreviousProspectId && (() => {
-                        const prevProspect = allProposals.find(p => p.id === proposal.linkedPreviousProspectId);
-                        return prevProspect ? (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); onProposalClick(prevProspect); }}
-                            className="text-[9px] text-blue-500 hover:text-blue-700 hover:underline font-semibold truncate text-left mt-0.5"
-                            title={`Linked Prospect: ${prevProspect.name}`}
-                          >
-                            ↳ Linked Prospect: {prevProspect.name}
-                          </button>
-                        ) : null;
-                      })()}
-                      {proposal.linkedNextProspectId && (() => {
-                        const nextProspect = allProposals.find(p => p.id === proposal.linkedNextProspectId);
-                        return nextProspect ? (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); onProposalClick(nextProspect); }}
-                            className="text-[9px] text-emerald-600 hover:text-emerald-800 hover:underline font-semibold truncate text-left mt-0.5"
-                            title={`Linked Prospect: ${nextProspect.name}`}
-                          >
-                            ↳ Linked Prospect: {nextProspect.name}
-                          </button>
-                        ) : null;
-                      })()}
                     </div>
                     
                     <div className="flex-shrink-0 mt-3 pt-2 border-t border-gray-100">

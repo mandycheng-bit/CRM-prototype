@@ -20,7 +20,8 @@ import {
   Heart,
   Pencil,
   Settings,
-  AlertTriangle
+  AlertTriangle,
+  Paperclip
 } from 'lucide-react';
 
 // ==========================================
@@ -45,7 +46,29 @@ export interface ProductItem {
   premiumFields: FieldConfig[];
   dateTransferFields: FieldConfig[];
   status?: 'Active' | 'Archived';
+  restrictedStages?: number[]; // NB stage % values this product may never be moved to on the Oppty page
+  documentRequirements?: ProductDocumentRequirement[]; // per-NB-stage document requirements
 }
+
+// Attachment Management master list — Attachment Name is free text; File Type
+// (Compulsory/Optional) is looked up from here wherever an attachment is referenced,
+// never duplicated/edited on the referencing side.
+export interface AttachmentDefinition {
+  id: string;
+  name: string;
+  fileType: 'Compulsory' | 'Optional';
+}
+
+export interface ProductDocumentRequirement {
+  id: string;
+  stage: number; // NB stage % this requirement is introduced at (10/30/70/90/100)
+  attachmentName: string; // references AttachmentDefinition.name
+}
+
+// The only NB stages that can be restricted / carry document requirements — 0% (Draft,
+// before any real stage is reached) is intentionally excluded, matching the Oppty page's
+// pre-existing "Check Stage" convention. RB (Renewal) is out of scope for now.
+export const NB_CONFIG_STAGES = [10, 30, 70, 90, 100];
 
 export interface ProductAuditRecord {
   id: string;
@@ -587,6 +610,11 @@ export const ProductsConfiguration: React.FC = () => {
     return saved ? JSON.parse(saved) : INITIAL_PRODUCTS;
   });
 
+  const [attachmentDefinitions, setAttachmentDefinitions] = useState<AttachmentDefinition[]>(() => {
+    const saved = localStorage.getItem('pr2_attachment_definitions');
+    return saved ? JSON.parse(saved) : [];
+  });
+
   const [productAudits, setProductAudits] = useState<ProductAuditRecord[]>(() => {
     const saved = localStorage.getItem('pr2_product_audits');
     if (saved) return JSON.parse(saved);
@@ -598,7 +626,7 @@ export const ProductsConfiguration: React.FC = () => {
   });
 
   // Sidebar / Navigation and View States (Consolidated to Product Items and Benefit Groups)
-  const [activeTab, setActiveTab] = useState<'items' | 'benefitGroups'>('items');
+  const [activeTab, setActiveTab] = useState<'items' | 'benefitGroups' | 'attachments'>('items');
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
   const [isCreatingNew, setIsCreatingNew] = useState(false);
 
@@ -662,6 +690,8 @@ export const ProductsConfiguration: React.FC = () => {
   const [detailPremiumFields, setDetailPremiumFields] = useState<FieldConfig[]>([]);
   const [detailDateTransferFields, setDetailDateTransferFields] = useState<FieldConfig[]>([]);
   const [detailStatus, setDetailStatus] = useState<'Active' | 'Archived'>('Active');
+  const [detailRestrictedStages, setDetailRestrictedStages] = useState<number[]>([]);
+  const [detailDocumentRequirements, setDetailDocumentRequirements] = useState<ProductDocumentRequirement[]>([]);
 
   // Inline save errors
   const [saveErrors, setSaveErrors] = useState<{ name?: string; team?: string; group?: string; gmiProductGroup?: string; salesCreditRule?: string; isInsuranceProduct?: string }>({});
@@ -677,6 +707,7 @@ export const ProductsConfiguration: React.FC = () => {
   useEffect(() => { localStorage.setItem('pr2_product_groups', JSON.stringify(productGroups)); }, [productGroups]);
   useEffect(() => { localStorage.setItem('pr2_products_list', JSON.stringify(products)); }, [products]);
   useEffect(() => { localStorage.setItem('pr2_product_audits', JSON.stringify(productAudits)); }, [productAudits]);
+  useEffect(() => { localStorage.setItem('pr2_attachment_definitions', JSON.stringify(attachmentDefinitions)); }, [attachmentDefinitions]);
 
   // One-time data migration/reset to ensure we load the real enterprise product configuration immediately on mount.
   // Bumped to v4 to reseed salesCreditRule with the real TASK-12 formulas (previous seed used stub "Formula 1..6" labels).
@@ -728,6 +759,8 @@ export const ProductsConfiguration: React.FC = () => {
     setDetailPremiumFields(p.premiumFields || []);
     setDetailDateTransferFields(p.dateTransferFields || []);
     setDetailStatus(p.status || 'Active');
+    setDetailRestrictedStages(p.restrictedStages || []);
+    setDetailDocumentRequirements(p.documentRequirements || []);
   };
   useEffect(() => {
     if (selectedProduct) syncDetailFieldsFromProduct(selectedProduct);
@@ -817,7 +850,9 @@ export const ProductsConfiguration: React.FC = () => {
         detailSalesCreditRule !== '' ||
         JSON.stringify(detailVendorFields) !== JSON.stringify(getBlankVendorFields()) ||
         JSON.stringify(detailPremiumFields) !== JSON.stringify(getBlankPremiumFields()) ||
-        JSON.stringify(detailDateTransferFields) !== JSON.stringify(getBlankDateTransferFields())
+        JSON.stringify(detailDateTransferFields) !== JSON.stringify(getBlankDateTransferFields()) ||
+        detailRestrictedStages.length > 0 ||
+        detailDocumentRequirements.length > 0
       );
     }
     if (!selectedProduct) return false;
@@ -832,7 +867,9 @@ export const ProductsConfiguration: React.FC = () => {
       detailStatus !== (selectedProduct.status || 'Active') ||
       JSON.stringify(detailVendorFields) !== JSON.stringify(selectedProduct.vendorFields || []) ||
       JSON.stringify(detailPremiumFields) !== JSON.stringify(selectedProduct.premiumFields || []) ||
-      JSON.stringify(detailDateTransferFields) !== JSON.stringify(selectedProduct.dateTransferFields || [])
+      JSON.stringify(detailDateTransferFields) !== JSON.stringify(selectedProduct.dateTransferFields || []) ||
+      JSON.stringify(detailRestrictedStages) !== JSON.stringify(selectedProduct.restrictedStages || []) ||
+      JSON.stringify(detailDocumentRequirements) !== JSON.stringify(selectedProduct.documentRequirements || [])
     );
   };
 
@@ -900,6 +937,8 @@ export const ProductsConfiguration: React.FC = () => {
       required: false
     })));
     setDetailStatus('Active');
+    setDetailRestrictedStages([]);
+    setDetailDocumentRequirements([]);
     setSaveErrors({});
     setViewMode('detail');
   };
@@ -1009,7 +1048,9 @@ export const ProductsConfiguration: React.FC = () => {
         vendorFields: detailVendorFields,
         premiumFields: detailPremiumFields,
         dateTransferFields: detailDateTransferFields,
-        status: detailStatus
+        status: detailStatus,
+        restrictedStages: detailRestrictedStages,
+        documentRequirements: detailDocumentRequirements
       };
 
       const timestamp = getSystemDatetimeString();
@@ -1120,7 +1161,9 @@ export const ProductsConfiguration: React.FC = () => {
           vendorFields: detailVendorFields,
           premiumFields: detailPremiumFields,
           dateTransferFields: detailDateTransferFields,
-          status: detailStatus
+          status: detailStatus,
+          restrictedStages: detailRestrictedStages,
+          documentRequirements: detailDocumentRequirements
         };
       }
       return p;
@@ -1128,6 +1171,22 @@ export const ProductsConfiguration: React.FC = () => {
 
     setViewMode('list');
     setToast("Product configuration successfully saved.");
+  };
+
+  // ==========================================
+  // ATTACHMENT MANAGEMENT ACTIONS
+  // ==========================================
+  const addAttachmentDefinition = () => {
+    setAttachmentDefinitions(prev => [...prev, { id: `ATT-${Date.now()}`, name: '', fileType: 'Compulsory' }]);
+  };
+  const updateAttachmentDefinition = (id: string, patch: Partial<AttachmentDefinition>) => {
+    setAttachmentDefinitions(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a));
+  };
+  const removeAttachmentDefinition = (id: string) => {
+    const target = attachmentDefinitions.find(a => a.id === id);
+    const inUse = !!target && products.some(p => (p.documentRequirements || []).some(r => r.attachmentName === target.name));
+    if (inUse && !confirm('This attachment is referenced by one or more Product Item Document Requirements. Delete it anyway?')) return;
+    setAttachmentDefinitions(prev => prev.filter(a => a.id !== id));
   };
 
   // ==========================================
@@ -1696,7 +1755,8 @@ export const ProductsConfiguration: React.FC = () => {
         <div className="flex border-b border-gray-200 bg-white px-4 pt-2 rounded-xl shadow-xs overflow-x-auto gap-2">
           {[
             { id: 'items', label: 'Product Items', icon: Folder },
-            { id: 'benefitGroups', label: 'Benefit Groups (GMI)', icon: Layers }
+            { id: 'benefitGroups', label: 'Benefit Groups (GMI)', icon: Layers },
+            { id: 'attachments', label: 'Attachment Management', icon: Paperclip }
           ].map((tab) => {
             const isActive = activeTab === tab.id;
             const TabIcon = tab.icon;
@@ -2210,6 +2270,70 @@ export const ProductsConfiguration: React.FC = () => {
             </div>
           )}
 
+          {/* ATTACHMENT MANAGEMENT LIST */}
+          {activeTab === 'attachments' && (
+            <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-xs space-y-4">
+              <div className="border-b border-gray-200 pb-2 flex items-center justify-between">
+                <h4 className="text-xs font-black uppercase text-gray-900 tracking-wider">
+                  Attachment Management
+                </h4>
+                <button
+                  type="button"
+                  onClick={addAttachmentDefinition}
+                  className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-bold uppercase text-[9px] rounded-lg shadow-sm flex items-center gap-1 cursor-pointer h-8"
+                >
+                  <Plus size={12} />
+                  Add Attachment
+                </button>
+              </div>
+              <p className="text-[10px] text-gray-400 font-semibold">
+                Attachment Name is free text; File Type controls whether the document is mandatory when referenced from a Product Item's Document Requirements.
+              </p>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-gray-200 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                    <th className="text-left py-2 pr-3">Attachment Name</th>
+                    <th className="text-left py-2 pr-3 w-40">File Type</th>
+                    <th className="text-right py-2 w-10"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {attachmentDefinitions.map(a => (
+                    <tr key={a.id}>
+                      <td className="py-2 pr-3">
+                        <input
+                          type="text"
+                          value={a.name}
+                          onChange={e => updateAttachmentDefinition(a.id, { name: e.target.value })}
+                          placeholder="e.g. Appointment Letter"
+                          className="w-full px-2 py-1.5 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-orange-500"
+                        />
+                      </td>
+                      <td className="py-2 pr-3">
+                        <select
+                          value={a.fileType}
+                          onChange={e => updateAttachmentDefinition(a.id, { fileType: e.target.value as 'Compulsory' | 'Optional' })}
+                          className="w-full px-2 py-1.5 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-orange-500"
+                        >
+                          <option value="Compulsory">Compulsory</option>
+                          <option value="Optional">Optional</option>
+                        </select>
+                      </td>
+                      <td className="py-2 text-right">
+                        <button type="button" onClick={() => removeAttachmentDefinition(a.id)} className="p-1 text-gray-400 hover:text-red-600 rounded transition-colors">
+                          <Trash2 size={13} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {attachmentDefinitions.length === 0 && (
+                    <tr><td colSpan={3} className="py-6 text-center text-gray-400 italic">No attachments defined yet.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
         </div>
       )}
 
@@ -2655,6 +2779,125 @@ export const ProductsConfiguration: React.FC = () => {
                     <div className="text-[10px] text-gray-400 font-bold bg-gray-50 p-2.5 rounded-lg border border-gray-200">
                       💡 <strong>Required implies Visible:</strong> When a field is Required, it must also be checked as Visible.
                     </div>
+                  </div>
+
+                </div>
+
+                {/* Restriction & Document Requirements (Stacked) */}
+                <div className="space-y-6">
+
+                  {/* Restriction Parameters */}
+                  <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-xs space-y-4">
+                    <div className="border-b border-gray-200 pb-2">
+                      <h4 className="text-xs font-black uppercase text-gray-900 tracking-wider">
+                        Restriction Parameters
+                      </h4>
+                    </div>
+                    <p className="text-[10px] text-gray-400 font-semibold">
+                      Stages this Product Item may never be moved to on the Opportunity page (New Business only — Renewal stages are unaffected).
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {NB_CONFIG_STAGES.map(stage => {
+                        const isRestricted = detailRestrictedStages.includes(stage);
+                        return (
+                          <button
+                            key={stage}
+                            type="button"
+                            onClick={() => setDetailRestrictedStages(prev =>
+                              isRestricted ? prev.filter(s => s !== stage) : [...prev, stage]
+                            )}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-all ${
+                              isRestricted
+                                ? 'bg-red-50 border-red-300 text-red-600'
+                                : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                            }`}
+                          >
+                            {stage}%
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Document Requirements */}
+                  <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-xs space-y-4">
+                    <div className="border-b border-gray-200 pb-2 flex items-center justify-between">
+                      <h4 className="text-xs font-black uppercase text-gray-900 tracking-wider">
+                        Document Requirements
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!confirmDiscardUnsavedChanges()) return;
+                          setActiveTab('attachments');
+                          setViewMode('list');
+                        }}
+                        className="px-3 py-1 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 font-bold uppercase text-[9px] rounded-lg flex items-center gap-1 cursor-pointer h-7"
+                      >
+                        <Paperclip size={11} className="text-gray-400" />
+                        Manage Attachments
+                      </button>
+                    </div>
+                    {attachmentDefinitions.length === 0 && (
+                      <p className="text-[10px] text-amber-700 font-semibold bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                        No attachments defined yet — use "Manage Attachments" above to create some first.
+                      </p>
+                    )}
+                    {NB_CONFIG_STAGES.filter(stage => !detailRestrictedStages.includes(stage)).map(stage => {
+                      const rowsForStage = detailDocumentRequirements.filter(r => r.stage === stage);
+                      return (
+                        <div key={stage} className="border border-gray-200 rounded-lg p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] font-black uppercase text-gray-800">{stage}% Stage</span>
+                            <button
+                              type="button"
+                              onClick={() => setDetailDocumentRequirements(prev => [...prev, {
+                                id: `DOCREQ-${Date.now()}-${prev.length}`,
+                                stage,
+                                attachmentName: attachmentDefinitions[0]?.name || ''
+                              }])}
+                              className="text-[10px] font-bold text-orange-600 hover:text-orange-700 flex items-center gap-1"
+                            >
+                              <Plus size={11} />
+                              Add Requirement
+                            </button>
+                          </div>
+                          {rowsForStage.length === 0 ? (
+                            <p className="text-[10px] text-gray-400 italic">No document requirements configured for this stage.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {rowsForStage.map(row => {
+                                const attachment = attachmentDefinitions.find(a => a.name === row.attachmentName);
+                                return (
+                                  <div key={row.id} className="flex items-center gap-2">
+                                    <select
+                                      value={row.attachmentName}
+                                      onChange={e => setDetailDocumentRequirements(prev => prev.map(r => r.id === row.id ? { ...r, attachmentName: e.target.value } : r))}
+                                      className="flex-1 px-2 py-1.5 border border-gray-200 rounded text-xs bg-white"
+                                    >
+                                      <option value="">Please select</option>
+                                      {attachmentDefinitions.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+                                    </select>
+                                    <span className={`text-[9px] font-black uppercase px-2 py-1.5 rounded border whitespace-nowrap ${
+                                      attachment?.fileType === 'Compulsory' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-gray-50 text-gray-600 border-gray-200'
+                                    }`}>
+                                      {attachment?.fileType || '—'}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setDetailDocumentRequirements(prev => prev.filter(r => r.id !== row.id))}
+                                      className="p-1 text-gray-400 hover:text-red-600 rounded transition-colors"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
 
                 </div>

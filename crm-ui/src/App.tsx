@@ -21,6 +21,7 @@ export default function App() {
     if (activeModule === 'perspective-pipeline' && selectedProposal) {
       return (
         <ProposalDetail
+          key={selectedProposal.id}
           proposal={selectedProposal}
           allProposals={proposals}
           onBack={() => {
