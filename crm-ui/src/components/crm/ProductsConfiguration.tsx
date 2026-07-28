@@ -48,6 +48,8 @@ export interface ProductItem {
   status?: 'Active' | 'Archived';
   restrictedStages?: number[]; // NB stage % values this product may never be moved to on the Oppty page
   documentRequirements?: ProductDocumentRequirement[]; // per-NB-stage document requirements
+  restrictedStagesRB?: number[]; // same as restrictedStages, for Renewal (RB) stages
+  documentRequirementsRB?: ProductDocumentRequirement[]; // same as documentRequirements, for Renewal (RB) stages
 }
 
 // Attachment Management master list — Attachment Name is free text; File Type
@@ -61,14 +63,16 @@ export interface AttachmentDefinition {
 
 export interface ProductDocumentRequirement {
   id: string;
-  stage: number; // NB stage % this requirement is introduced at (10/30/70/90/100)
+  stage: number; // stage % this requirement is introduced at (NB: 10/30/70/90/100, RB: 65/75/85/95/100)
   attachmentName: string; // references AttachmentDefinition.name
 }
 
-// The only NB stages that can be restricted / carry document requirements — 0% (Draft,
+// The only stages that can be restricted / carry document requirements — 0% (Draft,
 // before any real stage is reached) is intentionally excluded, matching the Oppty page's
-// pre-existing "Check Stage" convention. RB (Renewal) is out of scope for now.
+// pre-existing "Check Stage" convention. NB and RB are configured separately since both
+// sets include a 100% stage that must not be conflated.
 export const NB_CONFIG_STAGES = [10, 30, 70, 90, 100];
+export const RB_CONFIG_STAGES = [65, 75, 85, 95, 100];
 
 export interface ProductAuditRecord {
   id: string;
@@ -626,7 +630,8 @@ export const ProductsConfiguration: React.FC = () => {
   });
 
   // Sidebar / Navigation and View States (Consolidated to Product Items and Benefit Groups)
-  const [activeTab, setActiveTab] = useState<'items' | 'benefitGroups' | 'attachments'>('items');
+  const [activeTab, setActiveTab] = useState<'items' | 'benefitGroups'>('items');
+  const [showAttachmentModal, setShowAttachmentModal] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
   const [isCreatingNew, setIsCreatingNew] = useState(false);
 
@@ -692,6 +697,11 @@ export const ProductsConfiguration: React.FC = () => {
   const [detailStatus, setDetailStatus] = useState<'Active' | 'Archived'>('Active');
   const [detailRestrictedStages, setDetailRestrictedStages] = useState<number[]>([]);
   const [detailDocumentRequirements, setDetailDocumentRequirements] = useState<ProductDocumentRequirement[]>([]);
+  const [detailRestrictedStagesRB, setDetailRestrictedStagesRB] = useState<number[]>([]);
+  const [detailDocumentRequirementsRB, setDetailDocumentRequirementsRB] = useState<ProductDocumentRequirement[]>([]);
+  // Which business type's Restriction Parameters / Document Requirements are shown —
+  // a view toggle only, not saved on the product itself.
+  const [detailConfigBusinessType, setDetailConfigBusinessType] = useState<'NB' | 'RB'>('NB');
 
   // Inline save errors
   const [saveErrors, setSaveErrors] = useState<{ name?: string; team?: string; group?: string; gmiProductGroup?: string; salesCreditRule?: string; isInsuranceProduct?: string }>({});
@@ -761,6 +771,8 @@ export const ProductsConfiguration: React.FC = () => {
     setDetailStatus(p.status || 'Active');
     setDetailRestrictedStages(p.restrictedStages || []);
     setDetailDocumentRequirements(p.documentRequirements || []);
+    setDetailRestrictedStagesRB(p.restrictedStagesRB || []);
+    setDetailDocumentRequirementsRB(p.documentRequirementsRB || []);
   };
   useEffect(() => {
     if (selectedProduct) syncDetailFieldsFromProduct(selectedProduct);
@@ -852,7 +864,9 @@ export const ProductsConfiguration: React.FC = () => {
         JSON.stringify(detailPremiumFields) !== JSON.stringify(getBlankPremiumFields()) ||
         JSON.stringify(detailDateTransferFields) !== JSON.stringify(getBlankDateTransferFields()) ||
         detailRestrictedStages.length > 0 ||
-        detailDocumentRequirements.length > 0
+        detailDocumentRequirements.length > 0 ||
+        detailRestrictedStagesRB.length > 0 ||
+        detailDocumentRequirementsRB.length > 0
       );
     }
     if (!selectedProduct) return false;
@@ -869,7 +883,9 @@ export const ProductsConfiguration: React.FC = () => {
       JSON.stringify(detailPremiumFields) !== JSON.stringify(selectedProduct.premiumFields || []) ||
       JSON.stringify(detailDateTransferFields) !== JSON.stringify(selectedProduct.dateTransferFields || []) ||
       JSON.stringify(detailRestrictedStages) !== JSON.stringify(selectedProduct.restrictedStages || []) ||
-      JSON.stringify(detailDocumentRequirements) !== JSON.stringify(selectedProduct.documentRequirements || [])
+      JSON.stringify(detailDocumentRequirements) !== JSON.stringify(selectedProduct.documentRequirements || []) ||
+      JSON.stringify(detailRestrictedStagesRB) !== JSON.stringify(selectedProduct.restrictedStagesRB || []) ||
+      JSON.stringify(detailDocumentRequirementsRB) !== JSON.stringify(selectedProduct.documentRequirementsRB || [])
     );
   };
 
@@ -939,6 +955,9 @@ export const ProductsConfiguration: React.FC = () => {
     setDetailStatus('Active');
     setDetailRestrictedStages([]);
     setDetailDocumentRequirements([]);
+    setDetailRestrictedStagesRB([]);
+    setDetailDocumentRequirementsRB([]);
+    setDetailConfigBusinessType('NB');
     setSaveErrors({});
     setViewMode('detail');
   };
@@ -1050,7 +1069,9 @@ export const ProductsConfiguration: React.FC = () => {
         dateTransferFields: detailDateTransferFields,
         status: detailStatus,
         restrictedStages: detailRestrictedStages,
-        documentRequirements: detailDocumentRequirements
+        documentRequirements: detailDocumentRequirements,
+        restrictedStagesRB: detailRestrictedStagesRB,
+        documentRequirementsRB: detailDocumentRequirementsRB
       };
 
       const timestamp = getSystemDatetimeString();
@@ -1163,7 +1184,9 @@ export const ProductsConfiguration: React.FC = () => {
           dateTransferFields: detailDateTransferFields,
           status: detailStatus,
           restrictedStages: detailRestrictedStages,
-          documentRequirements: detailDocumentRequirements
+          documentRequirements: detailDocumentRequirements,
+          restrictedStagesRB: detailRestrictedStagesRB,
+          documentRequirementsRB: detailDocumentRequirementsRB
         };
       }
       return p;
@@ -1184,7 +1207,10 @@ export const ProductsConfiguration: React.FC = () => {
   };
   const removeAttachmentDefinition = (id: string) => {
     const target = attachmentDefinitions.find(a => a.id === id);
-    const inUse = !!target && products.some(p => (p.documentRequirements || []).some(r => r.attachmentName === target.name));
+    const inUse = !!target && products.some(p =>
+      (p.documentRequirements || []).some(r => r.attachmentName === target.name) ||
+      (p.documentRequirementsRB || []).some(r => r.attachmentName === target.name)
+    );
     if (inUse && !confirm('This attachment is referenced by one or more Product Item Document Requirements. Delete it anyway?')) return;
     setAttachmentDefinitions(prev => prev.filter(a => a.id !== id));
   };
@@ -1755,8 +1781,7 @@ export const ProductsConfiguration: React.FC = () => {
         <div className="flex border-b border-gray-200 bg-white px-4 pt-2 rounded-xl shadow-xs overflow-x-auto gap-2">
           {[
             { id: 'items', label: 'Product Items', icon: Folder },
-            { id: 'benefitGroups', label: 'Benefit Groups (GMI)', icon: Layers },
-            { id: 'attachments', label: 'Attachment Management', icon: Paperclip }
+            { id: 'benefitGroups', label: 'Benefit Groups (GMI)', icon: Layers }
           ].map((tab) => {
             const isActive = activeTab === tab.id;
             const TabIcon = tab.icon;
@@ -2270,70 +2295,6 @@ export const ProductsConfiguration: React.FC = () => {
             </div>
           )}
 
-          {/* ATTACHMENT MANAGEMENT LIST */}
-          {activeTab === 'attachments' && (
-            <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-xs space-y-4">
-              <div className="border-b border-gray-200 pb-2 flex items-center justify-between">
-                <h4 className="text-xs font-black uppercase text-gray-900 tracking-wider">
-                  Attachment Management
-                </h4>
-                <button
-                  type="button"
-                  onClick={addAttachmentDefinition}
-                  className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-bold uppercase text-[9px] rounded-lg shadow-sm flex items-center gap-1 cursor-pointer h-8"
-                >
-                  <Plus size={12} />
-                  Add Attachment
-                </button>
-              </div>
-              <p className="text-[10px] text-gray-400 font-semibold">
-                Attachment Name is free text; File Type controls whether the document is mandatory when referenced from a Product Item's Document Requirements.
-              </p>
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-gray-200 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-                    <th className="text-left py-2 pr-3">Attachment Name</th>
-                    <th className="text-left py-2 pr-3 w-40">File Type</th>
-                    <th className="text-right py-2 w-10"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {attachmentDefinitions.map(a => (
-                    <tr key={a.id}>
-                      <td className="py-2 pr-3">
-                        <input
-                          type="text"
-                          value={a.name}
-                          onChange={e => updateAttachmentDefinition(a.id, { name: e.target.value })}
-                          placeholder="e.g. Appointment Letter"
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-orange-500"
-                        />
-                      </td>
-                      <td className="py-2 pr-3">
-                        <select
-                          value={a.fileType}
-                          onChange={e => updateAttachmentDefinition(a.id, { fileType: e.target.value as 'Compulsory' | 'Optional' })}
-                          className="w-full px-2 py-1.5 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-orange-500"
-                        >
-                          <option value="Compulsory">Compulsory</option>
-                          <option value="Optional">Optional</option>
-                        </select>
-                      </td>
-                      <td className="py-2 text-right">
-                        <button type="button" onClick={() => removeAttachmentDefinition(a.id)} className="p-1 text-gray-400 hover:text-red-600 rounded transition-colors">
-                          <Trash2 size={13} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {attachmentDefinitions.length === 0 && (
-                    <tr><td colSpan={3} className="py-6 text-center text-gray-400 italic">No attachments defined yet.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-
         </div>
       )}
 
@@ -2784,7 +2745,28 @@ export const ProductsConfiguration: React.FC = () => {
                 </div>
 
                 {/* Restriction & Document Requirements (Stacked) */}
+                {(() => {
+                  const isNB = detailConfigBusinessType === 'NB';
+                  const activeStages = isNB ? NB_CONFIG_STAGES : RB_CONFIG_STAGES;
+                  const activeRestrictedStages = isNB ? detailRestrictedStages : detailRestrictedStagesRB;
+                  const setActiveRestrictedStages = isNB ? setDetailRestrictedStages : setDetailRestrictedStagesRB;
+                  const activeDocumentRequirements = isNB ? detailDocumentRequirements : detailDocumentRequirementsRB;
+                  const setActiveDocumentRequirements = isNB ? setDetailDocumentRequirements : setDetailDocumentRequirementsRB;
+                  return (
                 <div className="space-y-6">
+
+                  <div className="flex items-center bg-gray-100 rounded-lg p-1 w-fit">
+                    {(['NB', 'RB'] as const).map(t => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setDetailConfigBusinessType(t)}
+                        className={`px-3 py-1 text-xs font-bold rounded transition-all ${detailConfigBusinessType === t ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+                      >
+                        {t === 'NB' ? 'New Business' : 'Renewal Business'}
+                      </button>
+                    ))}
+                  </div>
 
                   {/* Restriction Parameters */}
                   <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-xs space-y-4">
@@ -2794,16 +2776,16 @@ export const ProductsConfiguration: React.FC = () => {
                       </h4>
                     </div>
                     <p className="text-[10px] text-gray-400 font-semibold">
-                      Stages this Product Item may never be moved to on the Opportunity page (New Business only — Renewal stages are unaffected).
+                      Stages this Product Item may never be moved to on the Opportunity page ({isNB ? 'New Business' : 'Renewal Business'} only — {isNB ? 'Renewal' : 'New Business'} stages are unaffected).
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      {NB_CONFIG_STAGES.map(stage => {
-                        const isRestricted = detailRestrictedStages.includes(stage);
+                      {activeStages.map(stage => {
+                        const isRestricted = activeRestrictedStages.includes(stage);
                         return (
                           <button
                             key={stage}
                             type="button"
-                            onClick={() => setDetailRestrictedStages(prev =>
+                            onClick={() => setActiveRestrictedStages(prev =>
                               isRestricted ? prev.filter(s => s !== stage) : [...prev, stage]
                             )}
                             className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-all ${
@@ -2827,11 +2809,7 @@ export const ProductsConfiguration: React.FC = () => {
                       </h4>
                       <button
                         type="button"
-                        onClick={() => {
-                          if (!confirmDiscardUnsavedChanges()) return;
-                          setActiveTab('attachments');
-                          setViewMode('list');
-                        }}
+                        onClick={() => setShowAttachmentModal(true)}
                         className="px-3 py-1 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 font-bold uppercase text-[9px] rounded-lg flex items-center gap-1 cursor-pointer h-7"
                       >
                         <Paperclip size={11} className="text-gray-400" />
@@ -2843,15 +2821,15 @@ export const ProductsConfiguration: React.FC = () => {
                         No attachments defined yet — use "Manage Attachments" above to create some first.
                       </p>
                     )}
-                    {NB_CONFIG_STAGES.filter(stage => !detailRestrictedStages.includes(stage)).map(stage => {
-                      const rowsForStage = detailDocumentRequirements.filter(r => r.stage === stage);
+                    {activeStages.filter(stage => !activeRestrictedStages.includes(stage)).map(stage => {
+                      const rowsForStage = activeDocumentRequirements.filter(r => r.stage === stage);
                       return (
                         <div key={stage} className="border border-gray-200 rounded-lg p-3">
                           <div className="flex items-center justify-between mb-2">
                             <span className="text-[10px] font-black uppercase text-gray-800">{stage}% Stage</span>
                             <button
                               type="button"
-                              onClick={() => setDetailDocumentRequirements(prev => [...prev, {
+                              onClick={() => setActiveDocumentRequirements(prev => [...prev, {
                                 id: `DOCREQ-${Date.now()}-${prev.length}`,
                                 stage,
                                 attachmentName: attachmentDefinitions[0]?.name || ''
@@ -2872,7 +2850,7 @@ export const ProductsConfiguration: React.FC = () => {
                                   <div key={row.id} className="flex items-center gap-2">
                                     <select
                                       value={row.attachmentName}
-                                      onChange={e => setDetailDocumentRequirements(prev => prev.map(r => r.id === row.id ? { ...r, attachmentName: e.target.value } : r))}
+                                      onChange={e => setActiveDocumentRequirements(prev => prev.map(r => r.id === row.id ? { ...r, attachmentName: e.target.value } : r))}
                                       className="flex-1 px-2 py-1.5 border border-gray-200 rounded text-xs bg-white"
                                     >
                                       <option value="">Please select</option>
@@ -2885,7 +2863,7 @@ export const ProductsConfiguration: React.FC = () => {
                                     </span>
                                     <button
                                       type="button"
-                                      onClick={() => setDetailDocumentRequirements(prev => prev.filter(r => r.id !== row.id))}
+                                      onClick={() => setActiveDocumentRequirements(prev => prev.filter(r => r.id !== row.id))}
                                       className="p-1 text-gray-400 hover:text-red-600 rounded transition-colors"
                                     >
                                       <Trash2 size={13} />
@@ -2901,6 +2879,8 @@ export const ProductsConfiguration: React.FC = () => {
                   </div>
 
                 </div>
+                  );
+                })()}
 
               </div>
             )}
@@ -2981,6 +2961,93 @@ export const ProductsConfiguration: React.FC = () => {
                 className="px-4 py-2 bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 font-semibold rounded-lg text-xs cursor-pointer"
               >
                 Close Audit Logs
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manage Attachments Popup Dialog — inline, no navigation away from the Product Item being edited */}
+      {showAttachmentModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-lg overflow-hidden flex flex-col animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-gray-150 px-5 py-3.5 bg-gray-50">
+              <span className="text-xs font-black uppercase text-gray-900 tracking-wider">
+                Manage Attachments
+              </span>
+              <button
+                onClick={() => setShowAttachmentModal(false)}
+                className="p-1 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 cursor-pointer"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] text-gray-400 font-semibold max-w-xs">
+                  Attachment Name is free text; File Type controls whether the document is mandatory when referenced from a Product Item's Document Requirements.
+                </p>
+                <button
+                  type="button"
+                  onClick={addAttachmentDefinition}
+                  className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-bold uppercase text-[9px] rounded-lg shadow-sm flex items-center gap-1 cursor-pointer h-8 shrink-0"
+                >
+                  <Plus size={12} />
+                  Add Attachment
+                </button>
+              </div>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-gray-200 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                    <th className="text-left py-2 pr-3">Attachment Name</th>
+                    <th className="text-left py-2 pr-3 w-32">File Type</th>
+                    <th className="text-right py-2 w-10"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {attachmentDefinitions.map(a => (
+                    <tr key={a.id}>
+                      <td className="py-2 pr-3">
+                        <input
+                          type="text"
+                          value={a.name}
+                          onChange={e => updateAttachmentDefinition(a.id, { name: e.target.value })}
+                          placeholder="e.g. Appointment Letter"
+                          className="w-full px-2 py-1.5 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-orange-500"
+                        />
+                      </td>
+                      <td className="py-2 pr-3">
+                        <select
+                          value={a.fileType}
+                          onChange={e => updateAttachmentDefinition(a.id, { fileType: e.target.value as 'Compulsory' | 'Optional' })}
+                          className="w-full px-2 py-1.5 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-orange-500"
+                        >
+                          <option value="Compulsory">Compulsory</option>
+                          <option value="Optional">Optional</option>
+                        </select>
+                      </td>
+                      <td className="py-2 text-right">
+                        <button type="button" onClick={() => removeAttachmentDefinition(a.id)} className="p-1 text-gray-400 hover:text-red-600 rounded transition-colors">
+                          <Trash2 size={13} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {attachmentDefinitions.length === 0 && (
+                    <tr><td colSpan={3} className="py-6 text-center text-gray-400 italic">No attachments defined yet.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="border-t border-gray-150 px-5 py-3 bg-gray-50 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowAttachmentModal(false)}
+                className="px-4 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-bold uppercase text-[9px] rounded-lg shadow-sm cursor-pointer"
+              >
+                Done
               </button>
             </div>
           </div>

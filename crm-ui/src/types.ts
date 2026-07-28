@@ -231,8 +231,77 @@ export interface Proposal {
   opptyRejectFrequency?: number;
 
   // Product File Requirements
-  isFilterByProductItem?: boolean;
   productFileRequirements?: ProductFileRequirement[];
+
+  // Proposal workspace — persisted here (not just component state) so progress
+  // isn't lost when navigating away and back to this Opportunity.
+  childProposals?: ChildProposal[];
+}
+
+export interface ChildProposal {
+  id: string;
+  name: string;
+  version: string;
+  status: 'Draft' | 'In Progress' | 'Pending Internal Approval' | 'Pending Insurer' | 'Approved' | 'Accepted' | 'Declined' | 'Converted to Policy' | 'Finalized';
+  vendor: string;
+  premium: number;
+  commissionRate: number;
+  effectiveDate: string;
+  createdDate: string;
+  lastUpdated: string;
+  createdBy: string;
+  updatedBy: string;
+  summary: string;
+  policyId?: string;
+  isCurrent?: boolean;
+  locationType?: string;
+  productTeam?: string;
+  productCategory?: string;
+  productItem?: string;
+  productItemDetails?: string; // Detailed product item under the assigned GMI Product Group (Product Configuration module)
+  gmiProductGroup?: string;
+  selectedProducts?: string[];
+  standardPremium?: number;
+  premiumFrequency?: string;
+  currency?: string;
+  renewRequired?: 'Yes' | 'No';
+  benefitType?: string;
+  finalizedDate?: string;
+  debitNoteNo?: string;
+  policyStatus?: string;
+  renewedFrom?: string;
+  renewDate?: string;
+  loadedBenefits?: string[];
+  loadedCoverages?: string[];
+  // Basic Information (Summary) fields
+  industry?: string;
+  classOfProtection?: string;
+  internalReference?: string;
+  clientDiscountAmount?: number;
+  endDate?: string;
+  salesCode?: string;
+  salesPercentage?: number;
+  // Top KPI header fields
+  presentIncurredAmount?: number;
+  presentPaidAmount?: number;
+  previousIncurredAmount?: number;
+  previousPaidAmount?: number;
+  // Premium tab fields
+  premiumType?: string;
+  premiumAdjustment?: number;
+  proposalPremium?: number;
+  premiumBreakdown?: { employeeClass: string; gmCategory: string; premium: number; employee: number; spouse: number; children: number; other: number }[];
+  benefitPremiums?: { benefit: string; customerCategory: string; perPlanPremium: number }[];
+  // Renewal History (Expired Policy) fields
+  expiryDate?: string;
+  billingMethod?: string;
+}
+
+export interface UploadedRequirementFile {
+  id: string;
+  name: string;
+  size: string;
+  uploadedDate: string;
 }
 
 export interface ProductFileRequirement {
@@ -241,7 +310,7 @@ export interface ProductFileRequirement {
   type: 'Compulsory' | 'Optional';
   relatedProductItem: string;
   checkStage: string;
-  fileName?: string;
+  files?: UploadedRequirementFile[]; // a requirement row can hold multiple uploaded files
 }
 
 export interface CRMRemark {
