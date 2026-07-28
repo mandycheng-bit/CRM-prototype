@@ -1,12 +1,12 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { 
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import {
   ArrowLeft, Save, MoreVertical, CheckCircle2, AlertCircle, FileText,
   PieChart, Settings, TrendingUp, BarChart2, Users, Building2, DollarSign,
-  Calendar, Thermometer, ShieldCheck, Plus, Trash2, Download, Share2, 
+  Calendar, Thermometer, ShieldCheck, Plus, Trash2, Download, Share2,
   XCircle, X, History, FileCode, Check, Send, Upload, FileUp,
   Info, Activity as ActivityIcon, Edit, User, HelpCircle, Briefcase,
-  ChevronRight, Layers, FileSpreadsheet, Star, Play, Award, ClipboardCheck,
-  RefreshCw, Lock
+  ChevronRight, ChevronDown, Layers, FileSpreadsheet, Star, Play, Award, ClipboardCheck,
+  RefreshCw, Lock, Search
 } from 'lucide-react';
 import type { Proposal, BenefitRow, ProductFileRequirement, ChildProposal, UploadedRequirementFile } from '../../types';
 import { MOCK_COMPANIES, MOCK_INDIVIDUALS, MOCK_LEADS, MOCK_CAMPAIGNS } from '../../constants';
@@ -183,6 +183,83 @@ const FieldView: React.FC<{
     )}
   </div>
 );
+
+// Unified searchable dropdown used everywhere a long option list needs filtering
+// (Company/Individual, Campaign, Product Item). The search box sits fixed at the top
+// of the open panel; only the option list beneath it scrolls, and filtering is instant.
+interface SearchableDropdownOption {
+  id: string;
+  label: string;
+  value: string;
+  suffix?: string;
+}
+const SearchableDropdown: React.FC<{
+  value: string;
+  options: SearchableDropdownOption[];
+  onSelect: (value: string) => void;
+  placeholder: string;
+  className?: string;
+}> = ({ value, options, onSelect, placeholder, className }) => {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const filtered = options.filter(o => o.label.toLowerCase().includes(search.toLowerCase()));
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setSearch('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className={`relative ${className || ''}`}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 hover:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 font-semibold text-gray-800 text-left"
+      >
+        <span className="truncate">{value || 'Please select'}</span>
+        <ChevronDown size={12} className={`text-gray-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg flex flex-col max-h-64 overflow-hidden">
+          <div className="p-1.5 border-b border-gray-100 shrink-0">
+            <div className="relative">
+              <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                autoFocus
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder={placeholder}
+                className="w-full pl-6 pr-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-orange-500"
+              />
+            </div>
+          </div>
+          <div className="overflow-y-auto flex-1">
+            {filtered.length === 0 && <div className="px-2.5 py-2 text-xs text-gray-400 italic">No matches</div>}
+            {filtered.map(o => (
+              <button
+                type="button"
+                key={o.id}
+                onClick={() => { onSelect(o.value); setOpen(false); setSearch(''); }}
+                className={`w-full text-left px-2.5 py-1.5 text-xs hover:bg-orange-50 ${o.value === value ? 'bg-orange-50 font-bold text-orange-700' : 'text-gray-700'}`}
+              >
+                {o.label}{o.suffix || ''}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface ProposalDetailProps {
   proposal: Proposal;
@@ -721,31 +798,22 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     setEditedOpportunity(prev => ({ ...prev, split2: val, split3: Math.max(0, 100 - prev.split1 - val) }));
   };
 
-  // Company / Individual selector: two-step (entityType then source) plus a name search
+  // Company / Individual selector: two-step (entityType then source); name search is
+  // handled inline by the SearchableDropdown itself.
   const initialCompanyMeta = resolveCompanyMeta(proposal.client || 'DEMO COMPANY CO. LTD.');
   const [companyEntityType, setCompanyEntityType] = useState<'Company' | 'Individual'>(initialCompanyMeta.entityType);
   const [companySource, setCompanySource] = useState<'Customer' | 'Lead'>(initialCompanyMeta.source);
-  const [companySearch, setCompanySearch] = useState('');
   const filteredCompanyOptions = COMPANY_INDIVIDUAL_OPTIONS.filter(o =>
-    o.entityType === companyEntityType && o.source === companySource && o.label.toLowerCase().includes(companySearch.toLowerCase())
+    o.entityType === companyEntityType && o.source === companySource
   );
 
-  // Product Item selector search — the master list runs to 200+ entries.
-  const [productItemSearch, setProductItemSearch] = useState('');
-  const filteredProductItemNames = CONFIG_PRODUCT_NAMES.filter(p => p.toLowerCase().includes(productItemSearch.toLowerCase()));
-
-  // Campaign selector search
-  const [campaignSearch, setCampaignSearch] = useState('');
-  const filteredCampaignOptions = CAMPAIGN_OPTIONS.filter(c => c.toLowerCase().includes(campaignSearch.toLowerCase()));
   const handleToggleCompanyEntityType = (t: 'Company' | 'Individual') => {
     setCompanyEntityType(t);
-    setCompanySearch('');
     const opts = COMPANY_INDIVIDUAL_OPTIONS.filter(o => o.entityType === t && o.source === companySource);
     setEditedOpportunity(prev => ({ ...prev, company: opts[0]?.label || '', masterType: opts[0]?.masterType || 'Customer' }));
   };
   const handleToggleCompanySource = (t: 'Customer' | 'Lead') => {
     setCompanySource(t);
-    setCompanySearch('');
     const opts = COMPANY_INDIVIDUAL_OPTIONS.filter(o => o.entityType === companyEntityType && o.source === t);
     setEditedOpportunity(prev => ({ ...prev, company: opts[0]?.label || '', masterType: opts[0]?.masterType || 'Customer' }));
   };
@@ -756,7 +824,6 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     const meta = resolveCompanyMeta(proposal.client || 'DEMO COMPANY CO. LTD.');
     setCompanyEntityType(meta.entityType);
     setCompanySource(meta.source);
-    setCompanySearch('');
     setIsEditMode(false);
   };
 
@@ -2002,21 +2069,21 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                             ))}
                           </div>
                         </div>
-                        <input type="text" value={companySearch} onChange={e => setCompanySearch(e.target.value)} placeholder="Search by name..." className="w-full max-w-sm px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50" />
-                        <select
+                        <SearchableDropdown
+                          className="max-w-sm"
                           value={editedOpportunity.company}
-                          onChange={e => {
-                            const chosen = filteredCompanyOptions.find(o => o.label === e.target.value);
-                            setEditedOpportunity({...editedOpportunity, company: e.target.value, masterType: chosen?.masterType || editedOpportunity.masterType});
+                          options={filteredCompanyOptions.map(o => ({
+                            id: o.id,
+                            label: o.label,
+                            value: o.label,
+                            suffix: o.masterType === 'Lapsed Customer' ? ' (Lapsed)' : undefined
+                          }))}
+                          onSelect={label => {
+                            const chosen = filteredCompanyOptions.find(o => o.label === label);
+                            setEditedOpportunity({...editedOpportunity, company: label, masterType: chosen?.masterType || editedOpportunity.masterType});
                           }}
-                          className="w-full max-w-sm px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50"
-                        >
-                          {!filteredCompanyOptions.some(o => o.label === editedOpportunity.company) && editedOpportunity.company && (
-                            <option value={editedOpportunity.company}>{editedOpportunity.company} (not in {companyEntityType}/{companySource} list)</option>
-                          )}
-                          {filteredCompanyOptions.length === 0 && !editedOpportunity.company && <option value="">No matches</option>}
-                          {filteredCompanyOptions.map(o => <option key={o.id} value={o.label}>{o.label}{o.masterType === 'Lapsed Customer' ? ' (Lapsed)' : ''}</option>)}
-                        </select>
+                          placeholder="Search by name..."
+                        />
                       </div>
                     ) : (
                       <div className="flex items-center gap-2 px-2.5 py-1.5">
@@ -2047,22 +2114,12 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                     <input type="text" value={editedOpportunity.stage} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-semibold outline-none cursor-not-allowed" />
                   </div>
                   <FieldView label="Campaign" required editing={isEditMode} viewValue={editedOpportunity.campaign}>
-                    <div className="space-y-1.5">
-                      <input
-                        type="text"
-                        value={campaignSearch}
-                        onChange={e => setCampaignSearch(e.target.value)}
-                        placeholder="Search campaign..."
-                        className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50"
-                      />
-                      <select value={editedOpportunity.campaign} onChange={e => setEditedOpportunity({...editedOpportunity, campaign: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50">
-                        {!filteredCampaignOptions.includes(editedOpportunity.campaign) && editedOpportunity.campaign && (
-                          <option value={editedOpportunity.campaign}>{editedOpportunity.campaign}</option>
-                        )}
-                        {filteredCampaignOptions.length === 0 && <option value="">No matches</option>}
-                        {filteredCampaignOptions.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </div>
+                    <SearchableDropdown
+                      value={editedOpportunity.campaign}
+                      options={CAMPAIGN_OPTIONS.map(name => ({ id: name, label: name, value: name }))}
+                      onSelect={c => setEditedOpportunity({...editedOpportunity, campaign: c})}
+                      placeholder="Search campaign..."
+                    />
                   </FieldView>
                   <div>
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Relation Oppty ID</label>
@@ -2153,36 +2210,18 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                 <FieldView label="Product Item" required editing={isEditMode} viewValue={editedOpportunity.productItem} className="md:col-span-2">
-                  <div className="max-w-sm space-y-1.5">
-                    <input
-                      type="text"
-                      value={productItemSearch}
-                      onChange={e => setProductItemSearch(e.target.value)}
-                      placeholder="Search product item..."
-                      className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50"
-                    />
-                    <select
-                      value={editedOpportunity.productItem}
-                      onChange={e => {
-                        const selectedItem = e.target.value;
-                        setEditedOpportunity({
-                          ...editedOpportunity,
-                          productItem: selectedItem,
-                          productTeam: resolveProductTeam(selectedItem),
-                          productCategory: resolveProductCategory(selectedItem)
-                        });
-                      }}
-                      className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 font-semibold text-gray-800"
-                    >
-                      {!filteredProductItemNames.includes(editedOpportunity.productItem) && editedOpportunity.productItem && (
-                        <option value={editedOpportunity.productItem}>{editedOpportunity.productItem}</option>
-                      )}
-                      {filteredProductItemNames.length === 0 && <option value="">No matches</option>}
-                      {filteredProductItemNames.map(pName => (
-                        <option key={pName} value={pName}>{pName}</option>
-                      ))}
-                    </select>
-                  </div>
+                  <SearchableDropdown
+                    className="max-w-sm"
+                    value={editedOpportunity.productItem}
+                    options={CONFIG_PRODUCT_NAMES.map(name => ({ id: name, label: name, value: name }))}
+                    onSelect={selectedItem => setEditedOpportunity({
+                      ...editedOpportunity,
+                      productItem: selectedItem,
+                      productTeam: resolveProductTeam(selectedItem),
+                      productCategory: resolveProductCategory(selectedItem)
+                    })}
+                    placeholder="Search product item..."
+                  />
                 </FieldView>
                 <div>
                   <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Product Team</label>
