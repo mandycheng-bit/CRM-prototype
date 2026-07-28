@@ -2137,7 +2137,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                     </div>
                   </div>
                   {['Draft', 'Finalize', 'Policy'].includes(editedOpportunity.stage) && (
-                    <FieldView label="Effective Date 1 (Draft)" editing={isEditMode} viewValue={editedOpportunity.effectiveDate1 || '—'}>
+                    <FieldView label="Effective Date" editing={isEditMode} viewValue={editedOpportunity.effectiveDate1 || '—'}>
                       <input type="date" value={editedOpportunity.effectiveDate1} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate1: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
                     </FieldView>
                   )}
