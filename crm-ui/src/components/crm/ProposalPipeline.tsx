@@ -3,7 +3,7 @@ import type { Proposal, ProposalStage } from '../../types';
 import { MOCK_PROPOSALS, MOCK_COMPANIES, MOCK_INDIVIDUALS } from '../../constants';
 import { getConfiguredProducts } from './ProductsConfiguration';
 import { SALES_REP_TEAM_MAP } from './ProposalDetail';
-import { MoreHorizontal, MoreVertical, Plus, Filter, Search, LayoutGrid, List as ListIcon, History, Download, Upload, FileDown, Archive, Trash2 } from 'lucide-react';
+import { MoreHorizontal, MoreVertical, Plus, Filter, Search, LayoutGrid, List as ListIcon, History, Download, Upload, FileDown, Archive, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface ProposalPipelineProps {
   onProposalClick: (proposal: Proposal) => void;
@@ -146,6 +146,9 @@ const parseCsv = (text: string): string[][] => {
 const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, proposals, initialBusinessType = 'NB', onImportProposals, onUpdateProposal, onDeleteProposal }) => {
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
   const [dealsView, setDealsView] = useState<DealsView>('active');
+  // Collapsed Board columns (by column label) — lets the Sales Rep shrink
+  // columns they don't need right now so the board can fit without scrolling.
+  const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(new Set());
   const [openRowMenuId, setOpenRowMenuId] = useState<string | null>(null);
   const rowMenuRef = useRef<HTMLDivElement>(null);
   const [businessTypeFilter, setBusinessTypeFilter] = useState<'NB' | 'Renewal'>(initialBusinessType);
@@ -441,15 +444,43 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
     return filteredProposals.filter(p => getOpptyStageColumn(p, stageThresholds) === column);
   };
 
+  const toggleColumnCollapsed = (column: string) => {
+    setCollapsedColumns(prev => {
+      const next = new Set(prev);
+      if (next.has(column)) next.delete(column); else next.add(column);
+      return next;
+    });
+  };
+
   const renderBoardView = () => (
-    <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
+    <div className="flex gap-3 overflow-x-auto pb-4 custom-scrollbar">
       {displayColumns.map(column => {
         const proposals = getProposalsByColumn(column);
         const totalValue = proposals.reduce((sum, p) => sum + p.expectedRevenueGross, 0);
         const isProblemColumn = column === CASE_LOST_COLUMN || column === EXPIRED_COLUMN;
+        const isCollapsed = collapsedColumns.has(column);
+
+        if (isCollapsed) {
+          return (
+            <button
+              key={column}
+              onClick={() => toggleColumnCollapsed(column)}
+              title={`Expand ${column}`}
+              className={`w-10 shrink-0 flex flex-col items-center gap-2 pt-3 min-h-[550px] rounded-xl border border-gray-200 shadow-inner hover:bg-gray-100 transition-colors ${isProblemColumn ? 'bg-red-50/30' : 'bg-gray-50/50'}`}
+            >
+              <ChevronRight size={14} className="text-gray-400" />
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isProblemColumn ? 'bg-red-100 text-red-600' : 'bg-gray-200 text-gray-600'}`}>
+                {proposals.length}
+              </span>
+              <span className={`[writing-mode:vertical-rl] rotate-180 text-xs font-bold uppercase tracking-wider whitespace-nowrap ${isProblemColumn ? 'text-red-500' : 'text-gray-500'}`}>
+                {column}
+              </span>
+            </button>
+          );
+        }
 
         return (
-          <div key={column} className="flex-1 min-w-[260px] flex flex-col">
+          <div key={column} className="flex-1 min-w-[220px] flex flex-col">
             <div className="flex items-center justify-between mb-3 px-1">
               <div className="flex items-center gap-2">
                 <span className={`text-xs font-bold uppercase tracking-wider ${isProblemColumn ? 'text-red-500' : 'text-gray-500'}`}>{column}</span>
@@ -457,9 +488,14 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                   {proposals.length}
                 </span>
               </div>
-              <button className="text-gray-400 hover:text-gray-600">
-                <MoreHorizontal size={14} />
-              </button>
+              <div className="flex items-center gap-1">
+                <button onClick={() => toggleColumnCollapsed(column)} title={`Collapse ${column}`} className="text-gray-400 hover:text-gray-600">
+                  <ChevronLeft size={14} />
+                </button>
+                <button className="text-gray-400 hover:text-gray-600">
+                  <MoreHorizontal size={14} />
+                </button>
+              </div>
             </div>
 
             <div className="mb-3 px-1">
@@ -789,7 +825,8 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by Company ID/Name, Oppty ID/Name..."
+              placeholder="Search..."
+              title="Search by Company ID/Name, Oppty ID/Name"
               className="pl-2 pr-3 py-2 w-44 min-w-0 bg-transparent text-sm outline-none"
             />
             <div className="w-px self-stretch my-1.5 bg-gray-200" />

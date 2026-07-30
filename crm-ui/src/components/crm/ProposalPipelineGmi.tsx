@@ -784,7 +784,8 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by Company ID/Name, Oppty ID/Name..."
+              placeholder="Search..."
+              title="Search by Company ID/Name, Oppty ID/Name"
               className="pl-2 pr-3 py-2 w-44 min-w-0 bg-transparent text-sm outline-none"
             />
             <div className="w-px self-stretch my-1.5 bg-gray-200" />
