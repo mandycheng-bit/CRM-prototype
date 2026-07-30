@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import type { Proposal, ProposalStage } from '../../types';
 import { MOCK_PROPOSALS, MOCK_COMPANIES, MOCK_INDIVIDUALS } from '../../constants';
 import { getConfiguredProducts } from './ProductsConfiguration';
-import { SALES_REP_TEAM_MAP } from './ProposalDetail';
+import { SALES_REP_TEAM_MAP } from './ProposalDetailGmi';
 import { MoreHorizontal, MoreVertical, Plus, Filter, Search, LayoutGrid, List as ListIcon, History, Download, Upload, FileDown, Archive, Trash2 } from 'lucide-react';
 
 interface ProposalPipelineProps {
@@ -14,27 +14,9 @@ interface ProposalPipelineProps {
   onDeleteProposal?: (id: string) => void;
 }
 
-type DealsView = 'active' | 'archived';
+type DealsView = 'active' | 'lost' | 'archived';
 
-// Board columns are Oppty Stage (probability), not the raw `stage` field:
-// "Case Lost" = probability 0%, "Expired" = still open (not 0%/100%) but the
-// Effective Date has already passed, otherwise grouped by probability — a value
-// that doesn't land exactly on one of these thresholds (e.g. NB's 90%) is
-// folded down into the nearest lower one (e.g. 90% shows under 70%).
-const NB_STAGE_THRESHOLDS = [10, 30, 70, 100];
-const RB_STAGE_THRESHOLDS = [65, 75, 85, 95, 100];
-const CASE_LOST_COLUMN = 'Case Lost';
-const EXPIRED_COLUMN = 'Expired';
-
-const isPastEffectiveDate = (p: Proposal) => !!p.effectiveDate && new Date(p.effectiveDate) < new Date();
-
-const getOpptyStageColumn = (p: Proposal, thresholds: number[]): string => {
-  if (p.probability === 0) return CASE_LOST_COLUMN;
-  if (p.probability !== 100 && isPastEffectiveDate(p)) return EXPIRED_COLUMN;
-  const reached = thresholds.filter(t => t <= p.probability);
-  const bucket = reached.length ? Math.max(...reached) : thresholds[0];
-  return `${bucket}%`;
-};
+const STAGES: ProposalStage[] = ['Draft', 'SOB', 'Finalize', 'Policy'];
 
 const FILTER_FIELDS: { key: FilterKey; label: string }[] = [
   { key: 'salesRep', label: 'Sales Rep 1' },
@@ -381,6 +363,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
       if (!isArchived) return false;
     } else {
       if (isArchived) return false;
+      if (dealsView === 'lost' ? p.stage !== 'Lost' : p.stage === 'Lost') return false;
     }
     if (p.businessType !== businessTypeFilter) return false;
 
@@ -432,26 +415,24 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
     setOpenRowMenuId(null);
   };
 
-  const stageThresholds = businessTypeFilter === 'NB' ? NB_STAGE_THRESHOLDS : RB_STAGE_THRESHOLDS;
-  const displayColumns = [CASE_LOST_COLUMN, EXPIRED_COLUMN, ...stageThresholds.map(t => `${t}%`)];
-
-  const getProposalsByColumn = (column: string) => {
-    return filteredProposals.filter(p => getOpptyStageColumn(p, stageThresholds) === column);
+  const getProposalsByStage = (stage: ProposalStage) => {
+    return filteredProposals.filter(p => p.stage === stage);
   };
+
+  const displayStages = dealsView === 'lost' ? ['Lost'] as ProposalStage[] : STAGES;
 
   const renderBoardView = () => (
     <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
-      {displayColumns.map(column => {
-        const proposals = getProposalsByColumn(column);
+      {displayStages.map(stage => {
+        const proposals = getProposalsByStage(stage);
         const totalValue = proposals.reduce((sum, p) => sum + p.expectedRevenueGross, 0);
-        const isProblemColumn = column === CASE_LOST_COLUMN || column === EXPIRED_COLUMN;
 
         return (
-          <div key={column} className="flex-1 min-w-[260px] flex flex-col">
+          <div key={stage} className="flex-1 min-w-[260px] flex flex-col">
             <div className="flex items-center justify-between mb-3 px-1">
               <div className="flex items-center gap-2">
-                <span className={`text-xs font-bold uppercase tracking-wider ${isProblemColumn ? 'text-red-500' : 'text-gray-500'}`}>{column}</span>
-                <span className={`${isProblemColumn ? 'bg-red-100 text-red-600' : 'bg-gray-200 text-gray-600'} text-[10px] font-bold px-1.5 py-0.5 rounded-full`}>
+                <span className={`text-xs font-bold uppercase tracking-wider ${stage === 'Lost' ? 'text-red-500' : 'text-gray-500'}`}>{stage}</span>
+                <span className={`${stage === 'Lost' ? 'bg-red-100 text-red-600' : 'bg-gray-200 text-gray-600'} text-[10px] font-bold px-1.5 py-0.5 rounded-full`}>
                   {proposals.length}
                 </span>
               </div>
@@ -459,18 +440,18 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                 <MoreHorizontal size={14} />
               </button>
             </div>
-
+            
             <div className="mb-3 px-1">
               <div className="text-xs font-medium text-gray-400">Total: ${totalValue.toLocaleString()}</div>
             </div>
 
-            <div className={`flex flex-col gap-3 flex-1 min-h-[550px] ${isProblemColumn ? 'bg-red-50/30' : 'bg-gray-50/50'} p-3 rounded-xl border border-gray-200 shadow-inner`}>
+            <div className={`flex flex-col gap-3 flex-1 min-h-[550px] ${stage === 'Lost' ? 'bg-red-50/30' : 'bg-gray-50/50'} p-3 rounded-xl border border-gray-200 shadow-inner`}>
               <div className="flex-1 flex flex-col gap-3">
                 {proposals.map(proposal => (
-                  <div
+                  <div 
                     key={proposal.id}
                     onClick={() => onProposalClick(proposal)}
-                    className={`bg-white p-4 rounded-lg border border-gray-200 shadow-sm hover:border-orange-500 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between min-h-[190px] ${isProblemColumn ? 'border-l-4 border-l-red-500' : 'border-t border-t-gray-100 hover:translate-y-[-2px]'}`}
+                    className={`bg-white p-4 rounded-lg border border-gray-200 shadow-sm hover:border-orange-500 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between min-h-[190px] ${proposal.stage === 'Lost' ? 'border-l-4 border-l-red-500' : 'border-t border-t-gray-100 hover:translate-y-[-2px]'}`}
                   >
                     <div className="flex-1 flex flex-col min-w-0">
                       <div className="flex justify-between items-start mb-2">
@@ -550,11 +531,17 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                     </div>
                     
                     <div className="flex-shrink-0 mt-3 pt-2 border-t border-gray-100">
-                      <div className="flex flex-col">
-                        <span className="text-[9px] text-gray-400 uppercase font-black tracking-wider">Revenue</span>
-                        <span className="text-xs font-bold text-gray-900">${proposal.expectedRevenueGross.toLocaleString()}</span>
+                      <div className="flex items-center justify-between">
+                        <div className="flex flex-col">
+                          <span className="text-[9px] text-gray-400 uppercase font-black tracking-wider">Revenue</span>
+                          <span className="text-xs font-bold text-gray-900">${proposal.expectedRevenueGross.toLocaleString()}</span>
+                        </div>
+                        <div className="flex flex-col items-end">
+                          <span className="text-[9px] text-gray-400 uppercase font-black tracking-wider">Prob.</span>
+                          <span className="text-xs font-bold text-gray-900">{proposal.probability}%</span>
+                        </div>
                       </div>
-
+                      
                       <div className="mt-2 flex items-center gap-2">
                         <div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center text-[8px] font-bold text-blue-600 border border-white flex-shrink-0">
                           {proposal.salesRep.split(' ').map(n => n[0]).join('')}
@@ -566,7 +553,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                 ))}
               </div>
               
-              {dealsView === 'active' && !isProblemColumn && (
+              {dealsView === 'active' && (
                 <button className="w-full py-2 border border-dashed border-gray-300 rounded-lg text-gray-400 hover:text-orange-500 hover:border-orange-200 hover:bg-orange-50/20 transition-all flex items-center justify-center gap-2 text-xs font-medium mt-auto">
                   <Plus size={14} />
                   <span>Add Card</span>
@@ -767,6 +754,14 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
               }`}
             >
               <span>Active Deals</span>
+            </button>
+            <button
+              onClick={() => setDealsView('lost')}
+              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-all whitespace-nowrap ${
+                dealsView === 'lost' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <span>Lost Deals</span>
             </button>
             <button
               onClick={() => setDealsView('archived')}

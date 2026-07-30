@@ -97,6 +97,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
     productItem: 'Group Medical',
     effectiveDate: '2024-06-01',
     remarks: 'Initial discovery phase.',
+    client: 'Demo Office Co., Ltd.',
     contactPerson: 'User A',
     opportunitySummary: 'Interested in basic medical plan for 10 employees.',
     createdDate: '2024-03-28',
@@ -128,6 +129,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
     productItem: 'Group Medical',
     effectiveDate: '2024-07-01',
     remarks: 'Feasibility check ongoing.',
+    client: 'XYZ Corp',
     insurerTentative: 'AIA',
     regionMarket: 'HK',
     proposalType: 'Standard',
@@ -210,6 +212,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
     productItem: 'Group Medical',
     effectiveDate: '2024-04-01',
     remarks: 'Finalizing discount terms.',
+    client: 'Company B',
     finalQuotedPremium: 440000,
     discountCommercialAdjustment: '5% Loyalty Discount',
     commissionPercentage: 10,
@@ -250,6 +253,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
     productItem: 'Group Life',
     effectiveDate: '2024-02-01',
     remarks: 'Won and policy issued.',
+    client: 'DEF Group',
     finalPremium: 250000,
     finalCommission: 25000,
     finalProductPlanConfirmation: 'Group Life Standard',
@@ -291,6 +295,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
     productItem: 'Group Medical',
     effectiveDate: '2024-03-01',
     remarks: 'Lost to competitor.',
+    client: 'GHI Corp',
     lostReason: 'Price',
     lostDate: '2024-02-28',
     lostNotes: 'Competitor offered 15% lower premium with same coverage.',
@@ -323,6 +328,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
     productItem: 'Group Medical',
     effectiveDate: '2024-06-01',
     remarks: 'Renewal for POL-DEMO-002',
+    client: 'Company B',
     linkedPreviousPolicyId: 'POL-DEMO-002',
     createdDate: '2024-03-01',
     lastUpdated: '2024-03-30',
@@ -839,3 +845,25 @@ export const CRM_PROVIDERS = ['AIA', 'Bupa', 'Manulife', 'Prudential', 'AXA', 'H
 export const CONFIG_COMPANIES = ['GMAC', 'GMI', 'GMS'];
 export const CONFIG_SCHEMES = ['SuperTrust Plus', 'Global Choice', 'Smart Retirement'];
 export const CONFIG_COMMISSION_TYPES = ['1st Year', 'Renewal', 'Trailer', 'Transfer-in'];
+// Master list for the Product Opportunity Evaluation "MPF Scheme" lookup, managed
+// on the Opportunity Configuration page and persisted to localStorage under 'pr2_mpf_schemes'.
+export const INITIAL_MPF_SCHEMES = [
+  'Manulife MPF (Global Select) Plan',
+  'AIA MPF - Prime Value Choice',
+  'HSBC Mandatory Provident Fund - SuperTrust Plus',
+  'Sun Life MPF Master Trust',
+  'Principal MPF Simple Plan',
+];
+// Master list for the Product Opportunity Evaluation "Employer Option" lookup, managed
+// on the Opportunity Configuration page and persisted to localStorage under 'pr2_employer_options'.
+// Selecting an Employer Option auto-fills (and locks) Est Conversion Rate - Contribution (%) and
+// Est Conversion Rate - Asset Transfer (%) with that employer's configured default weighting.
+export interface EmployerOptionConfig {
+  name: string;
+  contributionWeighting: number;
+  assetTransferWeighting: number;
+}
+export const INITIAL_EMPLOYER_OPTIONS: EmployerOptionConfig[] = [
+  { name: 'Demo Employer A', contributionWeighting: 100, assetTransferWeighting: 100 },
+  { name: 'Demo Employer B', contributionWeighting: 50, assetTransferWeighting: 50 },
+];

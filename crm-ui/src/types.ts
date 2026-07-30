@@ -219,6 +219,8 @@ export interface Proposal {
   linkedPreviousProspectId?: string; // Linked Prospect (backward) — last year's Prospect this renewal was auto-created from
   linkedNextProspectId?: string; // Linked Prospect (forward) — the renewal Prospect auto-created from this one
   detailedProductItem?: string; // Detailed Product Item under the GMI Product Group (7-layer product hierarchy)
+  opptyOdooId?: string; // System-generated unless migrated in via Import, which may carry a real legacy Odoo ID
+  status?: 'Active' | 'Archived'; // Undefined counts as Active — matches the Product Configuration module's convention
 
   // Report & Dashboard
   salesRep1GrossAmount?: number;
@@ -229,6 +231,21 @@ export interface Proposal {
   salesRep3NetAmount?: number;
   opptyRejectDate?: string;
   opptyRejectFrequency?: number;
+
+  // Multi-Sales Split % Allocation — salesRep is Rep 1; Rep 2/3 are optional
+  salesRep2?: string;
+  salesRep3?: string;
+  split1?: number;
+  split2?: number;
+  split3?: number;
+
+  // Effective Date, captured per stage: Date 1 is the top-level `effectiveDate`,
+  // Date 2/3 are additionally captured once the Opportunity reaches Finalize/Policy
+  effectiveDate2?: string;
+  effectiveDate3?: string;
+
+  // Free-form labels the Sales Rep can attach to an Opportunity
+  tags?: string[];
 
   // Product File Requirements
   productFileRequirements?: ProductFileRequirement[];

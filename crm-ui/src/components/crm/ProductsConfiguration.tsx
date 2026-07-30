@@ -168,8 +168,6 @@ const INITIAL_VENDOR_FIELDS = [
   'Existing Scheme 5',
   'Proposed Service Provider',
   'New Scheme',
-  'Member First Name',
-  'Member Last Name',
   'Existing Insurer',
   'Proposed Insurer'
 ];
@@ -578,6 +576,18 @@ const INITIAL_PRODUCTS: ProductItem[] = INITIAL_PRODUCT_NAMES.map((name, index) 
     }))
   };
 });
+
+// Reads the same source the Product Configuration screen edits (localStorage,
+// falling back to the seed list), so filters/lookups elsewhere stay in sync
+// with whatever the user has configured there.
+export const getConfiguredProducts = (): ProductItem[] => {
+  const saved = localStorage.getItem('pr2_products_list');
+  if (!saved) return INITIAL_PRODUCTS;
+  // A corrupted/manually-edited localStorage value shouldn't crash every screen
+  // that reads product config (Prospect Pipeline, Opportunity Detail) — fall
+  // back to the seed list rather than letting JSON.parse throw uncaught.
+  try { return JSON.parse(saved); } catch (e) { return INITIAL_PRODUCTS; }
+};
 
 export const ProductsConfiguration: React.FC = () => {
   // ==========================================

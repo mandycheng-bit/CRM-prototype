@@ -1,18 +1,22 @@
-import { Briefcase, Package } from 'lucide-react';
+import { useState } from 'react';
+import { Briefcase, Package, Settings, SlidersHorizontal, ChevronDown } from 'lucide-react';
 
-export type ModuleId = 'perspective-pipeline' | 'products';
+export type ModuleId = 'perspective-pipeline' | 'prospect-2027' | 'products' | 'opportunity-config';
 
 interface Props {
   activeModule: ModuleId;
   onModuleChange: (id: ModuleId) => void;
 }
 
-const NAV = [
-  { id: 'perspective-pipeline' as ModuleId, label: 'Prospect', icon: Briefcase },
+const SETTINGS_CHILDREN = [
   { id: 'products' as ModuleId, label: 'Product Configuration', icon: Package },
+  { id: 'opportunity-config' as ModuleId, label: 'Opportunity Configuration', icon: SlidersHorizontal },
 ];
 
 export default function Sidebar({ activeModule, onModuleChange }: Props) {
+  const isSettingsChildActive = SETTINGS_CHILDREN.some(c => c.id === activeModule);
+  const [settingsOpen, setSettingsOpen] = useState(isSettingsChildActive);
+
   return (
     <div className="w-64 bg-[#1a1a1a] text-white h-screen flex flex-col border-r border-white/10">
       <div className="p-6 flex flex-col gap-1 border-b border-white/10">
@@ -26,17 +30,50 @@ export default function Sidebar({ activeModule, onModuleChange }: Props) {
       </div>
 
       <nav className="flex-1 py-4 overflow-y-auto">
-        {NAV.map(item => {
+        <button
+          onClick={() => onModuleChange('perspective-pipeline')}
+          className={`w-full flex items-center gap-3 px-6 py-2.5 text-sm transition-colors relative whitespace-nowrap ${
+            activeModule === 'perspective-pipeline' ? 'bg-orange-500/10 text-orange-500 font-medium' : 'text-gray-400 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          <Briefcase size={16} />
+          <span className="flex-1 text-left">Prospect(2026)</span>
+          {activeModule === 'perspective-pipeline' && <div className="absolute right-0 top-0 bottom-0 w-1 bg-orange-500" />}
+        </button>
+
+        <button
+          onClick={() => onModuleChange('prospect-2027')}
+          className={`w-full flex items-center gap-3 px-6 py-2.5 text-sm transition-colors relative whitespace-nowrap ${
+            activeModule === 'prospect-2027' ? 'bg-orange-500/10 text-orange-500 font-medium' : 'text-gray-400 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          <Briefcase size={16} />
+          <span className="flex-1 text-left">Prospect(2027)</span>
+          {activeModule === 'prospect-2027' && <div className="absolute right-0 top-0 bottom-0 w-1 bg-orange-500" />}
+        </button>
+
+        <button
+          onClick={() => setSettingsOpen(o => !o)}
+          className={`w-full flex items-center gap-3 px-6 py-2.5 text-sm transition-colors relative whitespace-nowrap ${
+            isSettingsChildActive ? 'text-orange-500 font-medium' : 'text-gray-400 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          <Settings size={16} />
+          <span className="flex-1 text-left">Settings</span>
+          <ChevronDown size={14} className={`transition-transform ${settingsOpen ? 'rotate-180' : ''}`} />
+        </button>
+
+        {settingsOpen && SETTINGS_CHILDREN.map(item => {
           const isActive = activeModule === item.id;
           return (
             <button
               key={item.id}
               onClick={() => onModuleChange(item.id)}
-              className={`w-full flex items-center gap-3 px-6 py-2.5 text-sm transition-colors relative whitespace-nowrap ${
+              className={`w-full flex items-center gap-3 pl-12 pr-6 py-2.5 text-sm transition-colors relative whitespace-nowrap ${
                 isActive ? 'bg-orange-500/10 text-orange-500 font-medium' : 'text-gray-400 hover:text-white hover:bg-white/5'
               }`}
             >
-              <item.icon size={16} />
+              <item.icon size={14} />
               <span className="flex-1 text-left">{item.label}</span>
               {isActive && <div className="absolute right-0 top-0 bottom-0 w-1 bg-orange-500" />}
             </button>

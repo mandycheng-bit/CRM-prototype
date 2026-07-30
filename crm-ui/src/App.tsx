@@ -2,10 +2,14 @@ import Sidebar from './components/Sidebar';
 import type { ModuleId } from './components/Sidebar';
 import ProposalPipeline from './components/crm/ProposalPipeline';
 import ProposalDetail from './components/crm/ProposalDetail';
+import ProposalPipelineGmi from './components/crm/ProposalPipelineGmi';
+import ProposalDetailGmi from './components/crm/ProposalDetailGmi';
 import ProductsConfiguration from './components/crm/ProductsConfiguration';
+import OpportunityConfiguration from './components/crm/OpportunityConfiguration';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { MOCK_PROPOSALS } from './constants';
 import type { Proposal } from './types';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 
 export default function App() {
@@ -16,45 +20,107 @@ export default function App() {
   // Demo-only role switcher — this prototype has no real auth/permission system;
   // this lets a PM demo the "only Admin can delete a 100% Opportunity" rule.
   const [currentRole, setCurrentRole] = useState<'Sales Rep' | 'Admin'>('Sales Rep');
+  // Set by ProposalDetail whenever its Opportunity draft has unsaved edits — a
+  // ref (not state) since it only needs to be read at click-time, not re-render the app.
+  const hasUnsavedOpportunityChangesRef = useRef(false);
 
   const renderModule = () => {
     if (activeModule === 'perspective-pipeline' && selectedProposal) {
       return (
-        <ProposalDetail
-          key={selectedProposal.id}
-          proposal={selectedProposal}
-          allProposals={proposals}
-          onBack={() => {
-            setPipelineBusinessType(selectedProposal.businessType === 'Renewal' ? 'Renewal' : 'NB');
-            setSelectedProposal(null);
-          }}
-          onSave={(p) => {
-            setProposals(prev => prev.map(x => x.id === p.id ? p : x));
-            setSelectedProposal(p);
-          }}
-          onCreateRenewal={(renewalProspect) => {
-            setProposals(prev => [...prev, renewalProspect]);
-          }}
-          onNavigateToProspect={(p) => setSelectedProposal(p)}
-          onDelete={(id) => setProposals(prev => prev.filter(p => p.id !== id))}
-          currentRole={currentRole}
-        />
+        <ErrorBoundary moduleLabel="Opportunity Detail" onReset={() => setSelectedProposal(null)} key={selectedProposal.id}>
+          <ProposalDetail
+            key={selectedProposal.id}
+            proposal={selectedProposal}
+            allProposals={proposals}
+            onBack={() => {
+              setPipelineBusinessType(selectedProposal.businessType === 'Renewal' ? 'Renewal' : 'NB');
+              setSelectedProposal(null);
+            }}
+            onSave={(p) => {
+              setProposals(prev => prev.map(x => x.id === p.id ? p : x));
+              setSelectedProposal(p);
+            }}
+            onNavigateToProspect={(p) => setSelectedProposal(p)}
+            onDelete={(id) => setProposals(prev => prev.filter(p => p.id !== id))}
+            currentRole={currentRole}
+            onDirtyStateChange={(dirty) => { hasUnsavedOpportunityChangesRef.current = dirty; }}
+          />
+        </ErrorBoundary>
       );
     }
     if (activeModule === 'perspective-pipeline') {
-      return <ProposalPipeline proposals={proposals} onProposalClick={setSelectedProposal} initialBusinessType={pipelineBusinessType} />;
+      return (
+        <ErrorBoundary moduleLabel="Prospect Pipeline">
+          <ProposalPipeline
+            proposals={proposals}
+            onProposalClick={setSelectedProposal}
+            initialBusinessType={pipelineBusinessType}
+            onImportProposals={(newOnes) => setProposals(prev => [...prev, ...newOnes])}
+            onUpdateProposal={(p) => setProposals(prev => prev.map(x => x.id === p.id ? p : x))}
+            onDeleteProposal={(id) => setProposals(prev => prev.filter(p => p.id !== id))}
+          />
+        </ErrorBoundary>
+      );
+    }
+    if (activeModule === 'prospect-2027' && selectedProposal) {
+      return (
+        <ErrorBoundary moduleLabel="Opportunity Detail" onReset={() => setSelectedProposal(null)} key={selectedProposal.id}>
+          <ProposalDetailGmi
+            key={selectedProposal.id}
+            proposal={selectedProposal}
+            allProposals={proposals}
+            onBack={() => {
+              setPipelineBusinessType(selectedProposal.businessType === 'Renewal' ? 'Renewal' : 'NB');
+              setSelectedProposal(null);
+            }}
+            onSave={(p) => {
+              setProposals(prev => prev.map(x => x.id === p.id ? p : x));
+              setSelectedProposal(p);
+            }}
+            onCreateRenewal={(renewalProspect) => {
+              setProposals(prev => [...prev, renewalProspect]);
+            }}
+            onNavigateToProspect={(p) => setSelectedProposal(p)}
+            onDelete={(id) => setProposals(prev => prev.filter(p => p.id !== id))}
+            currentRole={currentRole}
+            onDirtyStateChange={(dirty) => { hasUnsavedOpportunityChangesRef.current = dirty; }}
+          />
+        </ErrorBoundary>
+      );
+    }
+    if (activeModule === 'prospect-2027') {
+      return (
+        <ErrorBoundary moduleLabel="Prospect Pipeline">
+          <ProposalPipelineGmi
+            proposals={proposals}
+            onProposalClick={setSelectedProposal}
+            initialBusinessType={pipelineBusinessType}
+            onImportProposals={(newOnes) => setProposals(prev => [...prev, ...newOnes])}
+            onUpdateProposal={(p) => setProposals(prev => prev.map(x => x.id === p.id ? p : x))}
+            onDeleteProposal={(id) => setProposals(prev => prev.filter(p => p.id !== id))}
+          />
+        </ErrorBoundary>
+      );
+    }
+    if (activeModule === 'opportunity-config') {
+      return <OpportunityConfiguration />;
     }
     return <ProductsConfiguration />;
   };
 
   const handleModuleChange = (id: ModuleId) => {
+    if (hasUnsavedOpportunityChangesRef.current && !confirm('You have unsaved changes to this Opportunity. Leave and discard them?')) {
+      return;
+    }
     setActiveModule(id);
     setSelectedProposal(null);
   };
 
   const MODULE_LABEL: Record<ModuleId, string> = {
-    'perspective-pipeline': 'Prospect Pipeline',
+    'perspective-pipeline': 'Prospect Pipeline (2026)',
+    'prospect-2027': 'Prospect Pipeline (2027)',
     'products': 'Product Configuration',
+    'opportunity-config': 'Opportunity Configuration',
   };
 
   return (
