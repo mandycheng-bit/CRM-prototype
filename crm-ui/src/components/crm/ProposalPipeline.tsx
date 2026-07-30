@@ -718,8 +718,8 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
 
   return (
     <div className="flex flex-col p-6">
-      <div className="flex items-center justify-between gap-3 mb-6 overflow-x-auto custom-scrollbar">
-        <div className="flex items-center gap-4 shrink-0">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
+        <div className="flex items-center gap-4">
           <div className="flex items-center bg-orange-50 border border-orange-200 rounded-lg p-1">
             <button
               onClick={() => setBusinessTypeFilter('NB')}
@@ -778,33 +778,35 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
             </button>
           </div>
         </div>
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+        <div className="flex items-center gap-3">
+          <div className={`flex items-center bg-white border rounded-lg focus-within:ring-2 focus-within:ring-orange-500/20 focus-within:border-orange-500 ${
+            activeFilterCount > 0 ? 'border-orange-300' : 'border-gray-200'
+          }`}>
+            <Search className="ml-3 text-gray-400 shrink-0" size={14} />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by Company ID/Name, Oppty ID/Name..."
-              className="pl-9 pr-4 py-2 w-72 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+              className="pl-2 pr-3 py-2 w-64 bg-transparent text-sm outline-none"
             />
-          </div>
-          <div className="relative" ref={filterPanelRef}>
-            <button
-              onClick={() => setShowFilterPanel(prev => !prev)}
-              className={`flex items-center gap-2 px-3 py-2 bg-white border rounded-lg text-sm font-medium hover:bg-gray-50 whitespace-nowrap ${
-                activeFilterCount > 0 ? 'border-orange-300 text-orange-600' : 'border-gray-200 text-gray-600'
-              }`}
-            >
-              <Filter size={14} />
-              <span>Filter</span>
-              {activeFilterCount > 0 && (
-                <span className="bg-orange-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                  {activeFilterCount}
-                </span>
-              )}
-            </button>
-            {showFilterPanel && (
+            <div className="w-px self-stretch my-1.5 bg-gray-200" />
+            <div className="relative" ref={filterPanelRef}>
+              <button
+                onClick={() => setShowFilterPanel(prev => !prev)}
+                className={`flex items-center gap-1.5 pl-3 pr-3 py-2 text-sm font-medium hover:bg-gray-50 rounded-r-lg whitespace-nowrap ${
+                  activeFilterCount > 0 ? 'text-orange-600' : 'text-gray-600'
+                }`}
+              >
+                <Filter size={14} />
+                <span>Filter</span>
+                {activeFilterCount > 0 && (
+                  <span className="bg-orange-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
+              {showFilterPanel && (
               <div className="absolute right-0 mt-2 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-20 p-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-bold text-gray-700">Filters</span>
@@ -835,7 +837,8 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                   ))}
                 </div>
               </div>
-            )}
+              )}
+            </div>
           </div>
           <div className="relative" ref={exportPanelRef}>
             <button
