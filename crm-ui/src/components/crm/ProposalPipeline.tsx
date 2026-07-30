@@ -155,6 +155,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
     salesRep: '', salesTeam: '', productItem: '', productTeam: '', productCategory: '', gmiProductGroup: '',
   });
   const filterPanelRef = useRef<HTMLDivElement>(null);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
   const [selectedExportFields, setSelectedExportFields] = useState<Set<string>>(() => new Set(EXPORT_FIELD_DEFS.map(f => f.key)));
   const exportPanelRef = useRef<HTMLDivElement>(null);
@@ -170,6 +171,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
         setShowFilterPanel(false);
       }
       if (exportPanelRef.current && !exportPanelRef.current.contains(e.target as Node)) {
+        setShowMoreMenu(false);
         setShowExportPanel(false);
       }
       if (rowMenuRef.current && !rowMenuRef.current.contains(e.target as Node)) {
@@ -718,8 +720,8 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
 
   return (
     <div className="flex flex-col p-6">
-      <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
-        <div className="flex items-center gap-4">
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-6">
+        <div className="flex items-center gap-2">
           <div className="flex items-center bg-orange-50 border border-orange-200 rounded-lg p-1">
             <button
               onClick={() => setBusinessTypeFilter('NB')}
@@ -759,7 +761,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
             </button>
           </div>
 
-          <div className="flex bg-gray-100 rounded-lg p-1 ml-2">
+          <div className="flex bg-gray-100 rounded-lg p-1">
             <button
               onClick={() => setDealsView('active')}
               className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-all whitespace-nowrap ${
@@ -778,7 +780,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
             </button>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <div className={`flex items-center bg-white border rounded-lg focus-within:ring-2 focus-within:ring-orange-500/20 focus-within:border-orange-500 ${
             activeFilterCount > 0 ? 'border-orange-300' : 'border-gray-200'
           }`}>
@@ -788,7 +790,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by Company ID/Name, Oppty ID/Name..."
-              className="pl-2 pr-3 py-2 w-64 bg-transparent text-sm outline-none"
+              className="pl-2 pr-3 py-2 w-44 min-w-0 bg-transparent text-sm outline-none"
             />
             <div className="w-px self-stretch my-1.5 bg-gray-200" />
             <div className="relative" ref={filterPanelRef}>
@@ -842,12 +844,38 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
           </div>
           <div className="relative" ref={exportPanelRef}>
             <button
-              onClick={() => { setViewMode('list'); setShowExportPanel(prev => !prev); }}
+              onClick={() => { setShowMoreMenu(prev => !prev); setShowExportPanel(false); }}
               className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 whitespace-nowrap"
             >
-              <Download size={14} />
-              <span>Export</span>
+              <MoreHorizontal size={14} />
+              <span>More</span>
             </button>
+            {showMoreMenu && !showExportPanel && (
+              <div className="absolute right-0 mt-2 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1">
+                <button
+                  onClick={() => { setViewMode('list'); setShowExportPanel(true); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 text-left"
+                >
+                  <Download size={14} />
+                  <span>Export</span>
+                </button>
+                <button
+                  onClick={() => { handleDownloadImportTemplate(); setShowMoreMenu(false); }}
+                  title="Download a blank CSV template with the required import columns"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 text-left"
+                >
+                  <FileDown size={14} />
+                  <span>Template</span>
+                </button>
+                <button
+                  onClick={() => { importInputRef.current?.click(); setShowMoreMenu(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 text-left"
+                >
+                  <Upload size={14} />
+                  <span>Import</span>
+                </button>
+              </div>
+            )}
             {showExportPanel && (
               <div className="absolute right-0 mt-2 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-20 p-3">
                 <p className="text-[11px] text-gray-500 mb-2">
@@ -883,22 +911,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
               </div>
             )}
           </div>
-          <button
-            onClick={handleDownloadImportTemplate}
-            title="Download a blank CSV template with the required import columns"
-            className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 whitespace-nowrap"
-          >
-            <FileDown size={14} />
-            <span>Template</span>
-          </button>
           <input type="file" accept=".csv" ref={importInputRef} onChange={handleImportFile} className="hidden" />
-          <button
-            onClick={() => importInputRef.current?.click()}
-            className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 whitespace-nowrap"
-          >
-            <Upload size={14} />
-            <span>Import</span>
-          </button>
           <button className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors shadow-sm shadow-orange-500/20 whitespace-nowrap">
             <Plus size={16} />
             <span>New Prospect</span>
