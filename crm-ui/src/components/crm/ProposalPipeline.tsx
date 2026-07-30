@@ -718,8 +718,8 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
 
   return (
     <div className="flex flex-col p-6">
-      <div className="flex items-center justify-between flex-wrap gap-y-3 mb-6">
-        <div className="flex items-center flex-wrap gap-y-2 gap-4">
+      <div className="flex items-center justify-between gap-3 mb-6 overflow-x-auto custom-scrollbar">
+        <div className="flex items-center gap-4 shrink-0">
           <div className="flex items-center bg-orange-50 border border-orange-200 rounded-lg p-1">
             <button
               onClick={() => setBusinessTypeFilter('NB')}
@@ -778,7 +778,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
             </button>
           </div>
         </div>
-        <div className="flex items-center flex-wrap gap-y-2 gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
             <input
