@@ -6,13 +6,16 @@ import {
   XCircle, X, History, Check, Upload, FileUp,
   Info, Edit, User, Briefcase,
   ChevronDown, Award, ClipboardCheck,
-  Search, Archive
+  Search, Archive, AlertTriangle
 } from 'lucide-react';
 import type { Proposal, BenefitRow, ProductFileRequirement, UploadedRequirementFile } from '../../types';
 import { MOCK_COMPANIES, MOCK_INDIVIDUALS, MOCK_LEADS, MOCK_CAMPAIGNS, INITIAL_MPF_SCHEMES, INITIAL_EMPLOYER_OPTIONS } from '../../constants';
 import type { EmployerOptionConfig } from '../../constants';
+import { ConfirmDialog } from '../ConfirmDialog';
+import { ErrorDialog } from '../ErrorDialog';
+import { Toast, useToast } from '../Toast';
 
-const SALES_REPS = ['Sales Rep A', 'Sales Rep B', 'Sales Rep C', 'Sales Rep D'];
+export const SALES_REPS = ['Sales Rep A', 'Sales Rep B', 'Sales Rep C', 'Sales Rep D'];
 export const SALES_REP_TEAM_MAP: Record<string, string> = {
   'Sales Rep A': 'Sales Team A',
   'Sales Rep B': 'Sales Team B',
@@ -117,6 +120,14 @@ const formatDecimal2 = (raw: string | number) => {
   return isNaN(num) ? '' : num.toFixed(2);
 };
 
+// <input type="date"> accepts any year from 0001-9999 with no built-in sanity
+// check, so a fat-fingered year (e.g. "0001-06-01") saves silently otherwise.
+const isValidEffectiveDateYear = (dateStr: string) => {
+  if (!dateStr) return true;
+  const year = Number(dateStr.slice(0, 4));
+  return year >= 1900 && year <= 2100;
+};
+
 // Est Sales Credit formula engine. Rule strings must match ProductsConfiguration.tsx's
 // SALES_CREDIT_RULES exactly (the 7 real formulas from the Products PRD, TASK-12).
 const computeEstSalesCredit = (rule: string | undefined, v: Record<string, string>): number => {
@@ -178,8 +189,12 @@ const SearchableDropdown: React.FC<{
   options: SearchableDropdownOption[];
   onSelect: (value: string) => void;
   placeholder: string;
+  // Shown (in muted gray, like a text input's placeholder) on the closed button
+  // when nothing is selected yet — not a selectable option, unlike a native
+  // <select>'s placeholder row. Defaults to `placeholder` if not given.
+  buttonPlaceholder?: string;
   className?: string;
-}> = ({ value, options, onSelect, placeholder, className }) => {
+}> = ({ value, options, onSelect, placeholder, buttonPlaceholder, className }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
@@ -202,9 +217,9 @@ const SearchableDropdown: React.FC<{
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 hover:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 font-semibold text-gray-800 text-left"
+        className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 hover:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 text-left"
       >
-        <span className="truncate">{value || 'Please select'}</span>
+        <span className={`truncate ${value ? 'font-semibold text-gray-800' : 'font-normal text-gray-400'}`}>{value || buttonPlaceholder || placeholder}</span>
         <ChevronDown size={12} className={`text-gray-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
@@ -253,6 +268,9 @@ interface ProposalDetailProps {
   // action (e.g. switching Sidebar modules) can also guard against discarding
   // an in-progress Opportunity edit.
   onDirtyStateChange?: (isDirty: boolean) => void;
+  // True when this page was opened via "+ New Prospect" — same layout as
+  // preview/edit, just starting blank and already in Edit mode.
+  isNew?: boolean;
 }
 
 // Master lists for resolution inside Proposal
@@ -566,7 +584,7 @@ const CONFIG_PRODUCTS = CONFIG_PRODUCT_NAMES.map(name => ({
   gmiProductGroup: resolveFallbackGmiProductGroup(name)
 }));
 
-export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allProposals, onBack, onSave, onNavigateToProspect, onDelete, currentRole = 'Sales Rep', onDirtyStateChange }) => {
+export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allProposals, onBack, onSave, onNavigateToProspect, onDelete, currentRole = 'Sales Rep', onDirtyStateChange, isNew = false }) => {
 
   // Helper: is this product configured (Product Configuration module) as
   // "Applied to Individual" + "Is Insurance Product" = No — the one carve-out
@@ -634,7 +652,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     return allStages.filter(s => s >= earliestUnmetStage);
   };
 
-  const initialProductItem = proposal.productItem || 'Sample Care Gold';
+  const initialProductItem = isNew ? proposal.productItem : (proposal.productItem || 'Sample Care Gold');
   const initialProductTeam = resolveProductTeam(initialProductItem);
   const initialProductCategory = resolveProductCategory(initialProductItem);
 
@@ -644,11 +662,11 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     stage: proposal.stage || 'Draft',
     probability: proposal.probability || 30,
     // Effective Date, captured per stage: Date 1 shown Draft/Finalize/Policy, Date 2 shown Finalize/Policy, Date 3 shown Policy only
-    effectiveDate1: proposal.effectiveDate || '2026-05-01',
+    effectiveDate1: isNew ? '' : (proposal.effectiveDate || '2026-05-01'),
     effectiveDate2: proposal.effectiveDate2 || '',
     effectiveDate3: proposal.effectiveDate3 || '',
     // Customer Info
-    company: proposal.client || 'DEMO COMPANY CO. LTD.',
+    company: isNew ? '' : (proposal.client || 'DEMO COMPANY CO. LTD.'),
     masterType: proposal.masterType || resolveCompanyMeta(proposal.client || 'DEMO COMPANY CO. LTD.').masterType,
     // Product Info
     productTeam: initialProductTeam,
@@ -656,9 +674,9 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     productItem: initialProductItem,
     detailedProductItem: proposal.detailedProductItem || '',
     businessType: proposal.businessType === 'Renewal' ? 'Renewal' : 'NB',
-    campaign: proposal.campaign || CAMPAIGN_OPTIONS[0],
+    campaign: isNew ? '' : (proposal.campaign || CAMPAIGN_OPTIONS[0]),
     // Sales Assignment — a single rep always holds the full 100% split
-    salesRep1: proposal.salesRep || 'Sales Rep A',
+    salesRep1: isNew ? '' : (proposal.salesRep || 'Sales Rep A'),
     split1: proposal.split1 ?? 100,
     salesRep2: proposal.salesRep2 || '',
     split2: proposal.split2 ?? 0,
@@ -666,8 +684,8 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     split3: proposal.split3 ?? 0,
     // Evaluation & Lifecycle
     lossReason: proposal.lostReason || '',
-    tags: proposal.tags ?? ['Corporate', 'Q2 Outreach'],
-    opportunityNotes: proposal.remarks || 'Sample company requested comparison for Ward vs Semi-Private coverage for demo members.',
+    tags: isNew ? [] : (proposal.tags ?? ['Corporate', 'Q2 Outreach']),
+    opportunityNotes: isNew ? '' : (proposal.remarks || 'Sample company requested comparison for Ward vs Semi-Private coverage for demo members.'),
     // System fields — system-generated, not user-editable
     opptyOdooId: proposal.opptyOdooId || `ODOO-${proposal.id}`,
     createdOn: '2026-03-20',
@@ -688,8 +706,9 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   });
   const [editedOpportunity, setEditedOpportunity] = useState(buildInitialOpportunity);
 
-  // Records open in read-only View mode by default; Edit must be explicitly entered
-  const [isEditMode, setIsEditMode] = useState(false);
+  // Records open in read-only View mode by default; Edit must be explicitly entered.
+  // A brand-new (isNew) Opportunity has nothing to view yet, so it opens directly in Edit mode.
+  const [isEditMode, setIsEditMode] = useState(isNew);
 
   // Add Sales Rep: Rep 1 is always shown; up to 2 more can be added (max 3 total).
   // Initialized from whichever reps are already saved, so reopening a multi-rep
@@ -767,12 +786,19 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   };
 
   const handleCancelEdit = () => {
+    // A brand-new Opportunity was never saved, so there's no "View" state to fall
+    // back into — Cancel just discards the blank draft and returns to the Pipeline.
+    if (isNew) {
+      onBack();
+      return;
+    }
     setEditedOpportunity(buildInitialOpportunity());
     setNumSalesReps(1);
     const meta = resolveCompanyMeta(proposal.client || 'DEMO COMPANY CO. LTD.');
     setCompanyEntityType(meta.entityType);
     setCompanySource(meta.source);
     setIsEditMode(false);
+    setValidationError(null);
   };
 
   // Whether the Opportunity draft has been touched since entering Edit mode —
@@ -782,13 +808,40 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   const isOpportunityDirty = () => isEditMode && JSON.stringify(editedOpportunity) !== JSON.stringify(buildInitialOpportunity());
 
   // Guards any navigation away from this Opportunity (back to Pipeline, jumping
-  // to a Linked Prospect, switching modules) so an in-progress, unsaved edit
-  // isn't silently discarded by a stray click elsewhere.
-  const confirmDiscardOpportunityChanges = () => {
-    if (!isOpportunityDirty()) return true;
-    return confirm('You have unsaved changes to this Opportunity. Leave and discard them?');
+  // to a Linked Prospect) so an in-progress, unsaved edit isn't silently
+  // discarded by a stray click elsewhere. The action itself is queued and only
+  // runs once the discard is confirmed in the dialog below.
+  const [pendingLeaveAction, setPendingLeaveAction] = useState<(() => void) | null>(null);
+  const guardedNavigate = (action: () => void) => {
+    if (isOpportunityDirty()) {
+      setPendingLeaveAction(() => action);
+    } else {
+      action();
+    }
   };
 
+  // Also guards an actual browser-level navigation away (tab close, refresh,
+  // typing a new URL) — the in-app guard above only covers clicks inside this
+  // page.
+  const isOpportunityDirtyRef = useRef(false);
+  isOpportunityDirtyRef.current = isOpportunityDirty();
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isOpportunityDirtyRef.current) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  // Error/confirmation UI state — see ConfirmDialog/ErrorDialog/Toast usage below.
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [showSaveIncompleteError, setShowSaveIncompleteError] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(false);
+  const [pendingArchive, setPendingArchive] = useState(false);
+  const { toast, showToast } = useToast();
 
   // Product File Requirement uploads are available regardless of Edit mode, so they
   // persist immediately too — otherwise a file uploaded outside an explicit "Save
@@ -1030,19 +1083,24 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
         const options = spec.type === 'mpf-lookup' ? mpfSchemes : INITIAL_INSURERS;
         const manageLabel = spec.type === 'mpf-lookup' ? 'MPF Scheme' : 'Insurer';
         control = (
-          <select value={rawValue} onChange={e => handleSaveEvaluation({ ...evaluationValues, [f.name]: e.target.value })} className={commonInputClass}>
-            <option value="" disabled hidden>{`Select from ${manageLabel}`}</option>
-            {options.map(o => <option key={o} value={o}>{o}</option>)}
-          </select>
+          <SearchableDropdown
+            className="w-full"
+            value={rawValue}
+            options={options.map(o => ({ id: o, label: o, value: o }))}
+            onSelect={o => handleSaveEvaluation({ ...evaluationValues, [f.name]: o })}
+            placeholder={`Search ${manageLabel}...`}
+            buttonPlaceholder={`Select ${manageLabel}`}
+          />
         );
         break;
       }
       case 'employer-option':
         control = (
-          <select
+          <SearchableDropdown
+            className="w-full"
             value={rawValue}
-            onChange={e => {
-              const employerName = e.target.value;
+            options={employerOptions.map(o => ({ id: o.name, label: o.name, value: o.name }))}
+            onSelect={employerName => {
               const employer = employerOptions.find(o => o.name === employerName);
               handleSaveEvaluation({
                 ...evaluationValues,
@@ -1051,11 +1109,9 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                 'Est Conversion Rate - Asset Transfer (%)': employer ? formatDecimal2(employer.assetTransferWeighting) : '',
               });
             }}
-            className={commonInputClass}
-          >
-            <option value="">Please select</option>
-            {employerOptions.map(o => <option key={o.name} value={o.name}>{o.name}</option>)}
-          </select>
+            placeholder="Search Employer Option..."
+            buttonPlaceholder="Select Employer Option"
+          />
         );
         break;
       case 'readonly-percent2':
@@ -1069,10 +1125,14 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
         break;
       case 'employee-lookup':
         control = (
-          <select value={rawValue} onChange={e => handleSaveEvaluation({ ...evaluationValues, [f.name]: e.target.value })} className={commonInputClass}>
-            <option value="">Please select</option>
-            {EMPLOYEE_DIRECTORY.map(o => <option key={o} value={o}>{o}</option>)}
-          </select>
+          <SearchableDropdown
+            className="w-full"
+            value={rawValue}
+            options={EMPLOYEE_DIRECTORY.map(o => ({ id: o, label: o, value: o }))}
+            onSelect={o => handleSaveEvaluation({ ...evaluationValues, [f.name]: o })}
+            placeholder="Search Employee..."
+            buttonPlaceholder="Select Employee"
+          />
         );
         break;
       default:
@@ -1151,7 +1211,16 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     if (!editedOpportunity.salesRep1.trim()) missingFields.push('Sales Rep 1');
     if (!editedOpportunity.productItem.trim()) missingFields.push('Product Item');
     if (missingFields.length > 0) {
-      alert(`Please fill in the following required field(s) before saving:\n- ${missingFields.join('\n- ')}`);
+      setValidationError(`Please fill in the following required field(s): ${missingFields.join(', ')}.`);
+      return;
+    }
+
+    const invalidDateFields: string[] = [];
+    if (!isValidEffectiveDateYear(editedOpportunity.effectiveDate1)) invalidDateFields.push('Effective Date');
+    if (editedOpportunity.effectiveDate2 && !isValidEffectiveDateYear(editedOpportunity.effectiveDate2)) invalidDateFields.push('Effective Date 2 (Finalize)');
+    if (editedOpportunity.effectiveDate3 && !isValidEffectiveDateYear(editedOpportunity.effectiveDate3)) invalidDateFields.push('Effective Date 3 (Policy)');
+    if (invalidDateFields.length > 0) {
+      setValidationError(`Please enter a valid year (1900–2100) for: ${invalidDateFields.join(', ')}.`);
       return;
     }
 
@@ -1159,9 +1228,10 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     const isRep3Active = numSalesReps >= 3;
     const totalSplitPercent = editedOpportunity.split1 + (isRep2Active ? editedOpportunity.split2 : 0) + (isRep3Active ? editedOpportunity.split3 : 0);
     if (totalSplitPercent !== 100) {
-      alert(`Sales Rep Split % must total 100% (currently ${totalSplitPercent}%). Please adjust the Multi-Sales Split % Allocation before saving.`);
+      setValidationError(`Sales Rep Split % must total 100% (currently ${totalSplitPercent}%). Please adjust the Multi-Sales Split % Allocation before saving.`);
       return;
     }
+    setValidationError(null);
 
     // Master Type conversion is only committed once a 100% probability is actually
     // saved — not while the value is still being edited in the draft.
@@ -1236,34 +1306,48 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     const unsavedFields = editableFieldChecks
       .filter(([, draftValue, savedValue]) => JSON.stringify(draftValue) !== JSON.stringify(savedValue))
       .map(([label]) => label);
+    onSave?.(updatedProposal);
+    setEditedOpportunity(prev => ({ ...prev, masterType: savedMasterType }));
+    setIsEditMode(false);
+
     if (unsavedFields.length > 0) {
       console.warn(
         `[ProposalDetail] handleSaveOpportunity: these edited field(s) did not make it into the save payload — check the field mapping: ${unsavedFields.join(', ')}`,
         { editedOpportunity, updatedProposal }
       );
-      alert(`Warning: the following edited field(s) may NOT have been saved — please check with engineering:\n- ${unsavedFields.join('\n- ')}`);
+      setShowSaveIncompleteError(true);
+    } else {
+      showToast(isNew ? 'Opportunity created.' : 'Opportunity saved.');
     }
-
-    onSave?.(updatedProposal);
-    setEditedOpportunity(prev => ({ ...prev, masterType: savedMasterType }));
-    setIsEditMode(false);
-    alert("Opportunity changes saved successfully!");
   };
 
   const handleDeleteOpportunity = () => {
     if (editedOpportunity.probability === 100 && currentRole !== 'Admin') {
-      alert('Only Admin can delete an Opportunity that has reached 100% probability.');
+      setValidationError('Only Admin can delete an Opportunity that has reached 100% probability.');
       return;
     }
-    if (!confirm(`Delete Opportunity "${editedOpportunity.name}" (${proposal.id})? This cannot be undone.`)) return;
+    setPendingDelete(true);
+  };
+
+  const confirmDeleteOpportunity = () => {
+    setPendingDelete(false);
     onDelete?.(proposal.id);
     onBack();
   };
 
   const handleToggleArchiveOpportunity = () => {
-    const nextStatus: 'Active' | 'Archived' = proposal.status === 'Archived' ? 'Active' : 'Archived';
-    onSave?.({ ...proposal, status: nextStatus });
-    alert(`Opportunity ${nextStatus === 'Archived' ? 'archived' : 'activated'}.`);
+    if (proposal.status !== 'Archived') {
+      setPendingArchive(true);
+      return;
+    }
+    onSave?.({ ...proposal, status: 'Active' });
+    showToast('Opportunity activated.');
+  };
+
+  const confirmArchiveOpportunity = () => {
+    setPendingArchive(false);
+    onSave?.({ ...proposal, status: 'Archived' });
+    showToast('Opportunity archived.');
   };
 
   // Manual conversion for a Lead that reached 100% probability (already saved) on a
@@ -1273,7 +1357,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   const handleConvertLeadToCustomer = () => {
     onSave?.({ ...proposal, masterType: 'Customer' });
     setEditedOpportunity(prev => ({ ...prev, masterType: 'Customer' }));
-    alert(`"${proposal.client}" has been converted to a Customer. Existing Lead data has been carried over to the new Customer record.`);
+    showToast(`"${proposal.client}" converted to Customer.`);
   };
 
   // Product File Requirements — entirely config-driven (Product Configuration module's
@@ -1325,7 +1409,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
         const prevProspect = allProposals?.find(p => p.id === proposal.linkedPreviousProspectId);
         return (
           <button
-            onClick={() => prevProspect && confirmDiscardOpportunityChanges() && onNavigateToProspect?.(prevProspect)}
+            onClick={() => prevProspect && guardedNavigate(() => onNavigateToProspect?.(prevProspect))}
             disabled={!prevProspect}
             title={`Renewed from ${prevProspect ? prevProspect.name : proposal.linkedPreviousProspectId}`}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-[11px] font-semibold text-blue-700 shadow-sm hover:bg-blue-50 transition-colors disabled:cursor-default disabled:hover:bg-white"
@@ -1339,7 +1423,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
         const nextProspect = allProposals?.find(p => p.id === proposal.linkedNextProspectId);
         return (
           <button
-            onClick={() => nextProspect && confirmDiscardOpportunityChanges() && onNavigateToProspect?.(nextProspect)}
+            onClick={() => nextProspect && guardedNavigate(() => onNavigateToProspect?.(nextProspect))}
             disabled={!nextProspect}
             title={`Renewed into ${nextProspect ? nextProspect.name : proposal.linkedNextProspectId}`}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-200 rounded-lg text-[11px] font-semibold text-emerald-700 shadow-sm hover:bg-emerald-50 transition-colors disabled:cursor-default disabled:hover:bg-white"
@@ -1359,7 +1443,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
         <div className="mb-4">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => { if (confirmDiscardOpportunityChanges()) onBack(); }}
+              onClick={() => guardedNavigate(onBack)}
               className="p-2 hover:bg-gray-100 rounded-full border border-gray-200 bg-white shadow-sm text-gray-500"
             >
               <ArrowLeft size={16} />
@@ -1376,6 +1460,13 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       {/* OPPORTUNITY (COMMERCIAL) WORKSPACE */}
         <div className="px-6 pb-6 max-w-7xl mx-auto w-full flex-1">
           <div className="flex flex-col gap-6">
+
+              {validationError && (
+                <div className="flex items-start gap-2.5 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+                  <AlertTriangle size={14} className="text-red-500 shrink-0 mt-0.5" />
+                  <span className="font-medium">{validationError}</span>
+                </div>
+              )}
 
               {/* Title + Edit controls */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1408,7 +1499,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       </button>
                       <button onClick={handleSaveOpportunity} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5">
                         <Save size={14} />
-                        <span>Save Opportunity</span>
+                        <span>{isNew ? 'Create Opportunity' : 'Save Opportunity'}</span>
                       </button>
                     </>
                   ) : (
@@ -1527,6 +1618,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                             setEditedOpportunity({...editedOpportunity, company: label, masterType: chosen?.masterType || editedOpportunity.masterType});
                           }}
                           placeholder="Search by name..."
+                          buttonPlaceholder="Select Company / Individual"
                         />
                       </div>
                     ) : (
@@ -1563,6 +1655,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       options={CAMPAIGN_OPTIONS.map(name => ({ id: name, label: name, value: name }))}
                       onSelect={c => setEditedOpportunity({...editedOpportunity, campaign: c})}
                       placeholder="Search campaign..."
+                      buttonPlaceholder="Select Campaign"
                     />
                   </FieldView>
                   <div>
@@ -1571,17 +1664,17 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                   </div>
                   {['Draft', 'Finalize', 'Policy'].includes(editedOpportunity.stage) && (
                     <FieldView label="Effective Date" editing={isEditMode} viewValue={editedOpportunity.effectiveDate1 || '—'}>
-                      <input type="date" value={editedOpportunity.effectiveDate1} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate1: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
+                      <input type="date" min="1900-01-01" max="2100-12-31" value={editedOpportunity.effectiveDate1} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate1: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
                     </FieldView>
                   )}
                   {['Finalize', 'Policy'].includes(editedOpportunity.stage) && (
                     <FieldView label="Effective Date 2 (Finalize)" editing={isEditMode} viewValue={editedOpportunity.effectiveDate2 || '—'}>
-                      <input type="date" value={editedOpportunity.effectiveDate2} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate2: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
+                      <input type="date" min="1900-01-01" max="2100-12-31" value={editedOpportunity.effectiveDate2} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate2: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
                     </FieldView>
                   )}
                   {editedOpportunity.stage === 'Policy' && (
                     <FieldView label="Effective Date 3 (Policy)" editing={isEditMode} viewValue={editedOpportunity.effectiveDate3 || '—'}>
-                      <input type="date" value={editedOpportunity.effectiveDate3} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate3: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
+                      <input type="date" min="1900-01-01" max="2100-12-31" value={editedOpportunity.effectiveDate3} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate3: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
                     </FieldView>
                   )}
                   <div className="md:col-span-3">
@@ -1654,6 +1747,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       productCategory: resolveProductCategory(selectedItem)
                     })}
                     placeholder="Search product item..."
+                    buttonPlaceholder="Select Product Item"
                   />
                 </FieldView>
                 <div>
@@ -1981,6 +2075,39 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
             </div>
         </div>
 
+      <ConfirmDialog
+        open={pendingLeaveAction != null}
+        title="Leave without saving?"
+        message="This Opportunity has unsaved changes. Leaving this page will discard them."
+        confirmLabel="Discard Changes"
+        confirmVariant="danger"
+        onConfirm={() => { pendingLeaveAction?.(); setPendingLeaveAction(null); }}
+        onClose={() => setPendingLeaveAction(null)}
+      />
+      <ConfirmDialog
+        open={pendingDelete}
+        title="Delete this Opportunity?"
+        message={`This permanently deletes "${editedOpportunity.name}" (${proposal.id}). This cannot be undone.`}
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        onConfirm={confirmDeleteOpportunity}
+        onClose={() => setPendingDelete(false)}
+      />
+      <ConfirmDialog
+        open={pendingArchive}
+        title="Archive this Opportunity?"
+        message="It will be hidden from the default Pipeline view. You can activate it again later."
+        confirmLabel="Archive"
+        onConfirm={confirmArchiveOpportunity}
+        onClose={() => setPendingArchive(false)}
+      />
+      <ErrorDialog
+        open={showSaveIncompleteError}
+        title="Some changes may not have saved"
+        message="This Opportunity was saved, but part of the update may not have gone through correctly. Please check the record with engineering before relying on it."
+        onClose={() => setShowSaveIncompleteError(false)}
+      />
+      <Toast message={toast} />
     </div>
   );
 };

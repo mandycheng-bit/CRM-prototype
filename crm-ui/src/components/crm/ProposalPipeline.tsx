@@ -3,7 +3,9 @@ import type { Proposal, ProposalStage } from '../../types';
 import { MOCK_PROPOSALS, MOCK_COMPANIES, MOCK_INDIVIDUALS } from '../../constants';
 import { getConfiguredProducts } from './ProductsConfiguration';
 import { SALES_REP_TEAM_MAP } from './ProposalDetail';
-import { MoreHorizontal, MoreVertical, Plus, Filter, Search, LayoutGrid, List as ListIcon, History, Download, Upload, FileDown, Archive, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { MoreHorizontal, MoreVertical, Plus, Filter, Search, LayoutGrid, List as ListIcon, History, Download, Upload, FileDown, Archive, Trash2, ChevronLeft, ChevronRight, XCircle } from 'lucide-react';
+import { ConfirmDialog } from '../ConfirmDialog';
+import { Toast, useToast } from '../Toast';
 
 interface ProposalPipelineProps {
   onProposalClick: (proposal: Proposal) => void;
@@ -12,6 +14,7 @@ interface ProposalPipelineProps {
   onImportProposals?: (newProposals: Proposal[]) => void;
   onUpdateProposal?: (proposal: Proposal) => void;
   onDeleteProposal?: (id: string) => void;
+  onCreateProspect?: (businessType: 'NB' | 'Renewal') => void;
 }
 
 type DealsView = 'active' | 'archived';
@@ -143,7 +146,7 @@ const parseCsv = (text: string): string[][] => {
   return rows.filter(r => r.some(cell => cell.trim() !== ''));
 };
 
-const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, proposals, initialBusinessType = 'NB', onImportProposals, onUpdateProposal, onDeleteProposal }) => {
+const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, proposals, initialBusinessType = 'NB', onImportProposals, onUpdateProposal, onDeleteProposal, onCreateProspect }) => {
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
   const [dealsView, setDealsView] = useState<DealsView>('active');
   // Collapsed Board columns (by column label) — lets the Sales Rep shrink
@@ -151,6 +154,16 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
   const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(new Set());
   const [openRowMenuId, setOpenRowMenuId] = useState<string | null>(null);
   const rowMenuRef = useRef<HTMLDivElement>(null);
+  // List view's row menu is rendered fixed-position (viewport coords from the
+  // trigger button) instead of absolute-inside-the-table, because the table's
+  // overflow-x-auto wrapper otherwise also clips vertical overflow (a CSS
+  // overflow-x/-y interaction) — the menu was getting cut off / forcing an
+  // unwanted internal scrollbar instead of floating above the content.
+  const [listRowMenu, setListRowMenu] = useState<{ proposal: Proposal; top: number; left: number } | null>(null);
+  const [pendingArchiveRow, setPendingArchiveRow] = useState<Proposal | null>(null);
+  const [pendingDeleteRow, setPendingDeleteRow] = useState<Proposal | null>(null);
+  const [exportValidationError, setExportValidationError] = useState<string | null>(null);
+  const { toast, showToast } = useToast();
   const [businessTypeFilter, setBusinessTypeFilter] = useState<'NB' | 'Renewal'>(initialBusinessType);
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilterPanel, setShowFilterPanel] = useState(false);
@@ -179,6 +192,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
       }
       if (rowMenuRef.current && !rowMenuRef.current.contains(e.target as Node)) {
         setOpenRowMenuId(null);
+        setListRowMenu(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -216,8 +230,9 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
 
   const handleExportCsv = () => {
     const fields = EXPORT_FIELD_DEFS.filter(f => selectedExportFields.has(f.key));
-    if (fields.length === 0) { alert('Select at least one column to export.'); return; }
-    if (selectedProposals.length === 0) { alert('Select at least one row to export (see the checkboxes in List view).'); return; }
+    if (fields.length === 0) { setExportValidationError('Select at least one column to export.'); return; }
+    if (selectedProposals.length === 0) { setExportValidationError('Select at least one row to export (see the checkboxes in List view).'); return; }
+    setExportValidationError(null);
     const header = fields.map(f => toCsvCell(f.label)).join(',');
     const dataRows = selectedProposals.map(p => fields.map(f => toCsvCell(getExportValue(p, f.key))).join(','));
     downloadFile(`Prospect_Export_${selectedProposals.length}.csv`, [header, ...dataRows].join('\r\n'), 'text/csv;charset=utf-8;');
@@ -425,16 +440,34 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
   const selectedProposals = filteredProposals.filter(p => selectedProposalIds.has(p.id));
 
   const handleToggleArchiveProposal = (p: Proposal) => {
-    const nextStatus: 'Active' | 'Archived' = p.status === 'Archived' ? 'Active' : 'Archived';
-    onUpdateProposal?.({ ...p, status: nextStatus });
     setOpenRowMenuId(null);
+    if (p.status !== 'Archived') {
+      setPendingArchiveRow(p);
+      return;
+    }
+    onUpdateProposal?.({ ...p, status: 'Active' });
+    showToast('Opportunity activated.');
+  };
+
+  const confirmArchiveRow = () => {
+    if (pendingArchiveRow) {
+      onUpdateProposal?.({ ...pendingArchiveRow, status: 'Archived' });
+      showToast('Opportunity archived.');
+    }
+    setPendingArchiveRow(null);
   };
 
   const handleDeleteProposalRow = (p: Proposal) => {
-    if (confirm(`Delete Opportunity "${p.name}" (${p.id})? This cannot be undone.`)) {
-      onDeleteProposal?.(p.id);
-    }
     setOpenRowMenuId(null);
+    setPendingDeleteRow(p);
+  };
+
+  const confirmDeleteRow = () => {
+    if (pendingDeleteRow) {
+      onDeleteProposal?.(pendingDeleteRow.id);
+      showToast('Opportunity deleted.');
+    }
+    setPendingDeleteRow(null);
   };
 
   const stageThresholds = businessTypeFilter === 'NB' ? NB_STAGE_THRESHOLDS : RB_STAGE_THRESHOLDS;
@@ -720,37 +753,45 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                   </div>
                 </td>
                 <td className="px-6 py-4 text-xs text-gray-400">{proposal.lastUpdated}</td>
-                <td className="px-6 py-4 text-right relative" onClick={(e) => e.stopPropagation()}>
+                <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                   <button
-                    onClick={() => setOpenRowMenuId(openRowMenuId === proposal.id ? null : proposal.id)}
+                    onClick={(e) => {
+                      if (listRowMenu?.proposal.id === proposal.id) { setListRowMenu(null); return; }
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setListRowMenu({ proposal, top: rect.bottom + 4, left: rect.right - 176 });
+                    }}
                     className="p-1.5 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-lg inline-flex items-center"
                   >
                     <MoreVertical size={16} />
                   </button>
-                  {openRowMenuId === proposal.id && (
-                    <div ref={rowMenuRef} className="absolute right-6 top-10 z-30 w-44 bg-white border border-gray-200 rounded-lg shadow-lg py-1 text-xs text-gray-700 font-semibold text-left">
-                      <button
-                        onClick={() => handleToggleArchiveProposal(proposal)}
-                        className="w-full px-3 py-2 hover:bg-gray-50 text-left flex items-center gap-2"
-                      >
-                        <Archive size={12} className="text-gray-400" />
-                        {proposal.status === 'Archived' ? 'Activate' : 'Archive'}
-                      </button>
-                      <button
-                        onClick={() => handleDeleteProposalRow(proposal)}
-                        className="w-full px-3 py-2 hover:bg-red-50 text-red-600 text-left flex items-center gap-2"
-                      >
-                        <Trash2 size={12} />
-                        Delete
-                      </button>
-                    </div>
-                  )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {listRowMenu && (
+        <div
+          ref={rowMenuRef}
+          style={{ position: 'fixed', top: listRowMenu.top, left: listRowMenu.left }}
+          className="z-30 w-44 bg-white border border-gray-200 rounded-lg shadow-lg py-1 text-xs text-gray-700 font-semibold text-left"
+        >
+          <button
+            onClick={() => { handleToggleArchiveProposal(listRowMenu.proposal); setListRowMenu(null); }}
+            className="w-full px-3 py-2 hover:bg-gray-50 text-left flex items-center gap-2"
+          >
+            <Archive size={12} className="text-gray-400" />
+            {listRowMenu.proposal.status === 'Archived' ? 'Activate' : 'Archive'}
+          </button>
+          <button
+            onClick={() => { handleDeleteProposalRow(listRowMenu.proposal); setListRowMenu(null); }}
+            className="w-full px-3 py-2 hover:bg-red-50 text-red-600 text-left flex items-center gap-2"
+          >
+            <Trash2 size={12} />
+            Delete
+          </button>
+        </div>
+      )}
     </div>
   );
 
@@ -890,7 +931,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
             {showMoreMenu && !showExportPanel && (
               <div className="absolute right-0 mt-2 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1">
                 <button
-                  onClick={() => { setViewMode('list'); setShowExportPanel(true); }}
+                  onClick={() => { setViewMode('list'); setShowExportPanel(true); setExportValidationError(null); }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 text-left"
                 >
                   <Download size={14} />
@@ -915,6 +956,17 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
             )}
             {showExportPanel && (
               <div className="absolute right-0 mt-2 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-20 p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-black uppercase text-gray-900 tracking-wider">Export</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowExportPanel(false)}
+                    className="p-0.5 text-gray-400 hover:text-gray-700 rounded hover:bg-gray-100"
+                    title="Close"
+                  >
+                    <XCircle size={15} />
+                  </button>
+                </div>
                 <p className="text-[11px] text-gray-500 mb-2">
                   {selectedProposals.length} of {filteredProposals.length} filtered row(s) selected — check/uncheck rows in List view.
                 </p>
@@ -941,15 +993,23 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                     </label>
                   ))}
                 </div>
-                <button onClick={handleExportCsv} className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-orange-500 text-white rounded-lg text-xs font-bold hover:bg-orange-600">
-                  <Download size={12} />
-                  <span>Export {selectedProposals.length} row(s) as CSV</span>
-                </button>
+                {exportValidationError && (
+                  <p className="text-[11px] text-red-600 font-medium mb-2">{exportValidationError}</p>
+                )}
+                <div className="flex gap-2">
+                  <button onClick={() => setShowExportPanel(false)} className="px-3 py-1.5 bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 rounded-lg text-xs font-bold">
+                    Cancel
+                  </button>
+                  <button onClick={handleExportCsv} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-orange-500 text-white rounded-lg text-xs font-bold hover:bg-orange-600">
+                    <Download size={12} />
+                    <span>Export {selectedProposals.length} row(s) as CSV</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
           <input type="file" accept=".csv" ref={importInputRef} onChange={handleImportFile} className="hidden" />
-          <button className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors shadow-sm shadow-orange-500/20 whitespace-nowrap">
+          <button onClick={() => onCreateProspect?.(businessTypeFilter)} className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors shadow-sm shadow-orange-500/20 whitespace-nowrap">
             <Plus size={16} />
             <span>New Prospect</span>
           </button>
@@ -957,6 +1017,25 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
       </div>
 
       {viewMode === 'board' ? renderBoardView() : renderListView()}
+
+      <ConfirmDialog
+        open={pendingDeleteRow != null}
+        title="Delete this Opportunity?"
+        message={pendingDeleteRow ? `This permanently deletes "${pendingDeleteRow.name}" (${pendingDeleteRow.id}). This cannot be undone.` : ''}
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        onConfirm={confirmDeleteRow}
+        onClose={() => setPendingDeleteRow(null)}
+      />
+      <ConfirmDialog
+        open={pendingArchiveRow != null}
+        title="Archive this Opportunity?"
+        message="It will be hidden from the default Pipeline view. You can activate it again later."
+        confirmLabel="Archive"
+        onConfirm={confirmArchiveRow}
+        onClose={() => setPendingArchiveRow(null)}
+      />
+      <Toast message={toast} />
     </div>
   );
 };

@@ -7,15 +7,53 @@ import ProposalDetailGmi from './components/crm/ProposalDetailGmi';
 import ProductsConfiguration from './components/crm/ProductsConfiguration';
 import OpportunityConfiguration from './components/crm/OpportunityConfiguration';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { ConfirmDialog } from './components/ConfirmDialog';
 import { MOCK_PROPOSALS } from './constants';
 import type { Proposal } from './types';
 import { useRef, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 
+// Blank starting point for "+ New Prospect" — every field ProposalDetail's Save
+// Payload Completeness check reads from `...proposal` must already be present,
+// same as buildInitialOpportunity's defaults for a NB/Renewal record.
+const buildBlankProposal = (businessType: 'NB' | 'Renewal'): Proposal => {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    id: `P-${Date.now().toString().slice(-8)}`,
+    name: '',
+    stage: businessType === 'NB' ? 'Draft' : 'SOB',
+    probability: businessType === 'NB' ? 10 : 75,
+    expectedRevenueGross: 0,
+    expectedRevenueNet: 0,
+    salesRep: '',
+    splitRatio: '100%',
+    campaign: '',
+    source: 'Manual',
+    businessType,
+    productCategory: '',
+    productItem: '',
+    effectiveDate: '',
+    remarks: '',
+    mcr: 0,
+    lossRatio: 0,
+    conversionRate: 0,
+    estimatedContribution: 0,
+    estimatedCommission: 0,
+    estimatedRevenue: 0,
+    aum: 0,
+    createdDate: today,
+    lastUpdated: today,
+    stageLastUpdated: today,
+    owner: '',
+    sourceSystem: 'CRM',
+  };
+};
+
 export default function App() {
   const [activeModule, setActiveModule] = useState<ModuleId>('perspective-pipeline');
   const [proposals, setProposals] = useState<Proposal[]>(MOCK_PROPOSALS);
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
+  const [isNewProspect, setIsNewProspect] = useState(false);
   const [pipelineBusinessType, setPipelineBusinessType] = useState<'NB' | 'Renewal'>('NB');
   // Demo-only role switcher — this prototype has no real auth/permission system;
   // this lets a PM demo the "only Admin can delete a 100% Opportunity" rule.
@@ -32,13 +70,16 @@ export default function App() {
             key={selectedProposal.id}
             proposal={selectedProposal}
             allProposals={proposals}
+            isNew={isNewProspect}
             onBack={() => {
               setPipelineBusinessType(selectedProposal.businessType === 'Renewal' ? 'Renewal' : 'NB');
               setSelectedProposal(null);
+              setIsNewProspect(false);
             }}
             onSave={(p) => {
-              setProposals(prev => prev.map(x => x.id === p.id ? p : x));
+              setProposals(prev => prev.some(x => x.id === p.id) ? prev.map(x => x.id === p.id ? p : x) : [...prev, p]);
               setSelectedProposal(p);
+              setIsNewProspect(false);
             }}
             onNavigateToProspect={(p) => setSelectedProposal(p)}
             onDelete={(id) => setProposals(prev => prev.filter(p => p.id !== id))}
@@ -58,6 +99,10 @@ export default function App() {
             onImportProposals={(newOnes) => setProposals(prev => [...prev, ...newOnes])}
             onUpdateProposal={(p) => setProposals(prev => prev.map(x => x.id === p.id ? p : x))}
             onDeleteProposal={(id) => setProposals(prev => prev.filter(p => p.id !== id))}
+            onCreateProspect={(businessType) => {
+              setIsNewProspect(true);
+              setSelectedProposal(buildBlankProposal(businessType));
+            }}
           />
         </ErrorBoundary>
       );
@@ -108,12 +153,27 @@ export default function App() {
     return <ProductsConfiguration />;
   };
 
+  // Mirrors the in-page discard guard inside ProposalDetail — this one covers
+  // leaving via the Sidebar instead of a click inside the Opportunity page.
+  const [pendingModuleChange, setPendingModuleChange] = useState<ModuleId | null>(null);
+
   const handleModuleChange = (id: ModuleId) => {
-    if (hasUnsavedOpportunityChangesRef.current && !confirm('You have unsaved changes to this Opportunity. Leave and discard them?')) {
+    if (hasUnsavedOpportunityChangesRef.current) {
+      setPendingModuleChange(id);
       return;
     }
     setActiveModule(id);
     setSelectedProposal(null);
+    setIsNewProspect(false);
+  };
+
+  const confirmModuleChange = () => {
+    if (pendingModuleChange) {
+      setActiveModule(pendingModuleChange);
+      setSelectedProposal(null);
+      setIsNewProspect(false);
+    }
+    setPendingModuleChange(null);
   };
 
   const MODULE_LABEL: Record<ModuleId, string> = {
@@ -156,6 +216,15 @@ export default function App() {
           {renderModule()}
         </div>
       </main>
+      <ConfirmDialog
+        open={pendingModuleChange != null}
+        title="Leave without saving?"
+        message="This Opportunity has unsaved changes. Leaving this page will discard them."
+        confirmLabel="Discard Changes"
+        confirmVariant="danger"
+        onConfirm={confirmModuleChange}
+        onClose={() => setPendingModuleChange(null)}
+      />
     </div>
   );
 }

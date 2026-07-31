@@ -117,6 +117,14 @@ const formatDecimal2 = (raw: string | number) => {
   return isNaN(num) ? '' : num.toFixed(2);
 };
 
+// <input type="date"> accepts any year from 0001-9999 with no built-in sanity
+// check, so a fat-fingered year (e.g. "0001-06-01") saves silently otherwise.
+const isValidEffectiveDateYear = (dateStr: string) => {
+  if (!dateStr) return true;
+  const year = Number(dateStr.slice(0, 4));
+  return year >= 1900 && year <= 2100;
+};
+
 // Est Sales Credit formula engine. Rule strings must match ProductsConfiguration.tsx's
 // SALES_CREDIT_RULES exactly (the 7 real formulas from the Products PRD, TASK-12).
 const computeEstSalesCredit = (rule: string | undefined, v: Record<string, string>): number => {
@@ -178,8 +186,12 @@ const SearchableDropdown: React.FC<{
   options: SearchableDropdownOption[];
   onSelect: (value: string) => void;
   placeholder: string;
+  // Shown (in muted gray, like a text input's placeholder) on the closed button
+  // when nothing is selected yet — not a selectable option, unlike a native
+  // <select>'s placeholder row. Defaults to `placeholder` if not given.
+  buttonPlaceholder?: string;
   className?: string;
-}> = ({ value, options, onSelect, placeholder, className }) => {
+}> = ({ value, options, onSelect, placeholder, buttonPlaceholder, className }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
@@ -202,9 +214,9 @@ const SearchableDropdown: React.FC<{
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 hover:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 font-semibold text-gray-800 text-left"
+        className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 hover:bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 text-left"
       >
-        <span className="truncate">{value || 'Please select'}</span>
+        <span className={`truncate ${value ? 'font-semibold text-gray-800' : 'font-normal text-gray-400'}`}>{value || buttonPlaceholder || placeholder}</span>
         <ChevronDown size={12} className={`text-gray-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
@@ -1410,19 +1422,24 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
         const options = spec.type === 'mpf-lookup' ? mpfSchemes : INITIAL_INSURERS;
         const manageLabel = spec.type === 'mpf-lookup' ? 'MPF Scheme' : 'Insurer';
         control = (
-          <select value={rawValue} onChange={e => handleSaveEvaluation({ ...evaluationValues, [f.name]: e.target.value })} className={commonInputClass}>
-            <option value="" disabled hidden>{`Select from ${manageLabel}`}</option>
-            {options.map(o => <option key={o} value={o}>{o}</option>)}
-          </select>
+          <SearchableDropdown
+            className="w-full"
+            value={rawValue}
+            options={options.map(o => ({ id: o, label: o, value: o }))}
+            onSelect={o => handleSaveEvaluation({ ...evaluationValues, [f.name]: o })}
+            placeholder={`Search ${manageLabel}...`}
+            buttonPlaceholder={`Select ${manageLabel}`}
+          />
         );
         break;
       }
       case 'employer-option':
         control = (
-          <select
+          <SearchableDropdown
+            className="w-full"
             value={rawValue}
-            onChange={e => {
-              const employerName = e.target.value;
+            options={employerOptions.map(o => ({ id: o.name, label: o.name, value: o.name }))}
+            onSelect={employerName => {
               const employer = employerOptions.find(o => o.name === employerName);
               handleSaveEvaluation({
                 ...evaluationValues,
@@ -1431,11 +1448,9 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                 'Est Conversion Rate - Asset Transfer (%)': employer ? formatDecimal2(employer.assetTransferWeighting) : '',
               });
             }}
-            className={commonInputClass}
-          >
-            <option value="">Please select</option>
-            {employerOptions.map(o => <option key={o.name} value={o.name}>{o.name}</option>)}
-          </select>
+            placeholder="Search Employer Option..."
+            buttonPlaceholder="Select Employer Option"
+          />
         );
         break;
       case 'readonly-percent2':
@@ -1449,10 +1464,14 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
         break;
       case 'employee-lookup':
         control = (
-          <select value={rawValue} onChange={e => handleSaveEvaluation({ ...evaluationValues, [f.name]: e.target.value })} className={commonInputClass}>
-            <option value="">Please select</option>
-            {EMPLOYEE_DIRECTORY.map(o => <option key={o} value={o}>{o}</option>)}
-          </select>
+          <SearchableDropdown
+            className="w-full"
+            value={rawValue}
+            options={EMPLOYEE_DIRECTORY.map(o => ({ id: o, label: o, value: o }))}
+            onSelect={o => handleSaveEvaluation({ ...evaluationValues, [f.name]: o })}
+            placeholder="Search Employee..."
+            buttonPlaceholder="Select Employee"
+          />
         );
         break;
       default:
@@ -1593,6 +1612,15 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     if (!editedOpportunity.productItem.trim()) missingFields.push('Product Item');
     if (missingFields.length > 0) {
       alert(`Please fill in the following required field(s) before saving:\n- ${missingFields.join('\n- ')}`);
+      return;
+    }
+
+    const invalidDateFields: string[] = [];
+    if (!isValidEffectiveDateYear(editedOpportunity.effectiveDate1)) invalidDateFields.push('Effective Date');
+    if (editedOpportunity.effectiveDate2 && !isValidEffectiveDateYear(editedOpportunity.effectiveDate2)) invalidDateFields.push('Effective Date 2 (Finalize)');
+    if (editedOpportunity.effectiveDate3 && !isValidEffectiveDateYear(editedOpportunity.effectiveDate3)) invalidDateFields.push('Effective Date 3 (Policy)');
+    if (invalidDateFields.length > 0) {
+      alert(`Please enter a valid year (1900–2100) for:\n- ${invalidDateFields.join('\n- ')}`);
       return;
     }
 
@@ -2196,6 +2224,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                             setEditedOpportunity({...editedOpportunity, company: label, masterType: chosen?.masterType || editedOpportunity.masterType});
                           }}
                           placeholder="Search by name..."
+                          buttonPlaceholder="Select Company / Individual"
                         />
                       </div>
                     ) : (
@@ -2232,6 +2261,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       options={CAMPAIGN_OPTIONS.map(name => ({ id: name, label: name, value: name }))}
                       onSelect={c => setEditedOpportunity({...editedOpportunity, campaign: c})}
                       placeholder="Search campaign..."
+                      buttonPlaceholder="Select Campaign"
                     />
                   </FieldView>
                   <div>
@@ -2240,17 +2270,17 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                   </div>
                   {['Draft', 'Finalize', 'Policy'].includes(editedOpportunity.stage) && (
                     <FieldView label="Effective Date" editing={isEditMode} viewValue={editedOpportunity.effectiveDate1 || '—'}>
-                      <input type="date" value={editedOpportunity.effectiveDate1} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate1: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
+                      <input type="date" min="1900-01-01" max="2100-12-31" value={editedOpportunity.effectiveDate1} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate1: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
                     </FieldView>
                   )}
                   {['Finalize', 'Policy'].includes(editedOpportunity.stage) && (
                     <FieldView label="Effective Date 2 (Finalize)" editing={isEditMode} viewValue={editedOpportunity.effectiveDate2 || '—'}>
-                      <input type="date" value={editedOpportunity.effectiveDate2} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate2: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
+                      <input type="date" min="1900-01-01" max="2100-12-31" value={editedOpportunity.effectiveDate2} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate2: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
                     </FieldView>
                   )}
                   {editedOpportunity.stage === 'Policy' && (
                     <FieldView label="Effective Date 3 (Policy)" editing={isEditMode} viewValue={editedOpportunity.effectiveDate3 || '—'}>
-                      <input type="date" value={editedOpportunity.effectiveDate3} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate3: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
+                      <input type="date" min="1900-01-01" max="2100-12-31" value={editedOpportunity.effectiveDate3} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate3: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
                     </FieldView>
                   )}
                   <div className="md:col-span-3">
@@ -2323,6 +2353,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       productCategory: resolveProductCategory(selectedItem)
                     })}
                     placeholder="Search product item..."
+                    buttonPlaceholder="Select Product Item"
                   />
                 </FieldView>
                 <div>
