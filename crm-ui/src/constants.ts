@@ -867,3 +867,7 @@ export const INITIAL_EMPLOYER_OPTIONS: EmployerOptionConfig[] = [
   { name: 'Demo Employer A', contributionWeighting: 100, assetTransferWeighting: 100 },
   { name: 'Demo Employer B', contributionWeighting: 50, assetTransferWeighting: 50 },
 ];
+// Master list for the Opportunity "Tags" field, managed on the Opportunity Configuration
+// page and persisted to localStorage under 'pr2_tags' — encourages reusing an existing
+// tag instead of everyone free-typing their own near-duplicate wording.
+export const INITIAL_TAGS = ['Corporate', 'Q2 Outreach'];

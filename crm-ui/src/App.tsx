@@ -85,6 +85,14 @@ export default function App() {
             onDelete={(id) => setProposals(prev => prev.filter(p => p.id !== id))}
             currentRole={currentRole}
             onDirtyStateChange={(dirty) => { hasUnsavedOpportunityChangesRef.current = dirty; }}
+            onTagRenamed={(oldName, newName) => setProposals(prev => prev.map(p => ({
+              ...p,
+              tags: (p.tags || []).map(t => t === oldName ? newName : t),
+            })))}
+            onTagDeleted={(name) => setProposals(prev => prev.map(p => ({
+              ...p,
+              tags: (p.tags || []).filter(t => t !== name),
+            })))}
           />
         </ErrorBoundary>
       );
@@ -150,7 +158,7 @@ export default function App() {
     if (activeModule === 'opportunity-config') {
       return <OpportunityConfiguration />;
     }
-    return <ProductsConfiguration />;
+    return <ProductsConfiguration proposals={proposals} />;
   };
 
   // Mirrors the in-page discard guard inside ProposalDetail — this one covers

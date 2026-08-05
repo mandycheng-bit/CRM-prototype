@@ -6,10 +6,10 @@ import {
   XCircle, X, History, Check, Upload, FileUp,
   Info, Edit, User, Briefcase,
   ChevronDown, Award, ClipboardCheck,
-  Search, Archive, AlertTriangle
+  Search, Archive, AlertTriangle, Settings, Pencil
 } from 'lucide-react';
 import type { Proposal, BenefitRow, ProductFileRequirement, UploadedRequirementFile } from '../../types';
-import { MOCK_COMPANIES, MOCK_INDIVIDUALS, MOCK_LEADS, MOCK_CAMPAIGNS, INITIAL_MPF_SCHEMES, INITIAL_EMPLOYER_OPTIONS } from '../../constants';
+import { MOCK_COMPANIES, MOCK_INDIVIDUALS, MOCK_LEADS, MOCK_CAMPAIGNS, INITIAL_MPF_SCHEMES, INITIAL_EMPLOYER_OPTIONS, INITIAL_TAGS } from '../../constants';
 import type { EmployerOptionConfig } from '../../constants';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { ErrorDialog } from '../ErrorDialog';
@@ -43,6 +43,19 @@ const resolveCompanyMeta = (label: string) => {
     : { entityType: 'Company' as const, source: 'Customer' as const, masterType: 'Customer' as MasterType };
 };
 const CAMPAIGN_OPTIONS = MOCK_CAMPAIGNS.filter(c => c.active).map(c => c.name);
+
+// "Member First Name"/"Member Last Name" were removed from Product Configuration's
+// field catalog, but a product saved to localStorage from before that change still
+// carries them baked into its own vendorFields/premiumFields/dateTransferFields
+// array — this strips them out of whatever's loaded so they stop rendering here
+// regardless of when the product was last saved in Product Configuration.
+const REMOVED_PRODUCT_FIELD_NAMES = ['Member First Name', 'Member Last Name'];
+const stripRemovedProductFields = (list: any[]): any[] => list.map(p => ({
+  ...p,
+  vendorFields: (p.vendorFields || []).filter((f: any) => !REMOVED_PRODUCT_FIELD_NAMES.includes(f.name)),
+  premiumFields: (p.premiumFields || []).filter((f: any) => !REMOVED_PRODUCT_FIELD_NAMES.includes(f.name)),
+  dateTransferFields: (p.dateTransferFields || []).filter((f: any) => !REMOVED_PRODUCT_FIELD_NAMES.includes(f.name)),
+}));
 
 // Mock master list for Product Opportunity Evaluation "Insurer" lookup (fixed list,
 // no in-page management UI). MPF Schemes are managed on the Opportunity Configuration page.
@@ -271,6 +284,12 @@ interface ProposalDetailProps {
   // True when this page was opened via "+ New Prospect" — same layout as
   // preview/edit, just starting blank and already in Edit mode.
   isNew?: boolean;
+  // Fired from the tag Manage popup so a rename/delete of the tag DEFINITION
+  // also updates every other Proposal already tagged with it — mirrors how
+  // renaming/deleting a Product Category cascades to every Product in
+  // ProductsConfiguration.tsx, rather than only fixing up the record open here.
+  onTagRenamed?: (oldName: string, newName: string) => void;
+  onTagDeleted?: (name: string) => void;
 }
 
 // Master lists for resolution inside Proposal
@@ -584,7 +603,7 @@ const CONFIG_PRODUCTS = CONFIG_PRODUCT_NAMES.map(name => ({
   gmiProductGroup: resolveFallbackGmiProductGroup(name)
 }));
 
-export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allProposals, onBack, onSave, onNavigateToProspect, onDelete, currentRole = 'Sales Rep', onDirtyStateChange, isNew = false }) => {
+export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allProposals, onBack, onSave, onNavigateToProspect, onDelete, currentRole = 'Sales Rep', onDirtyStateChange, isNew = false, onTagRenamed, onTagDeleted }) => {
 
   // Helper: is this product configured (Product Configuration module) as
   // "Applied to Individual" + "Is Insurance Product" = No — the one carve-out
@@ -660,7 +679,11 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   const buildInitialOpportunity = () => ({
     name: proposal.name,
     stage: proposal.stage || 'Draft',
-    probability: proposal.probability || 30,
+    // A blank/new Opportunity already starts at its business type's entry-level
+    // probability (10% NB / 75% RB — see App.tsx's buildBlankProposal), so this
+    // is always a real, valid value — no `|| 30` fallback needed (that would
+    // incorrectly reset an existing 0% Lost record back to 30 on every edit).
+    probability: proposal.probability,
     // Effective Date, captured per stage: Date 1 shown Draft/Finalize/Policy, Date 2 shown Finalize/Policy, Date 3 shown Policy only
     effectiveDate1: isNew ? '' : (proposal.effectiveDate || '2026-05-01'),
     effectiveDate2: proposal.effectiveDate2 || '',
@@ -699,12 +722,26 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     salesRep3NetAmount: proposal.salesRep3NetAmount ?? 0,
     opptyRejectDate: proposal.opptyRejectDate || '',
     opptyRejectFrequency: proposal.opptyRejectFrequency ?? 0,
-    // Product File Requirements
-    productFileRequirements: proposal.productFileRequirements ?? [
+    // Product File Requirements — a brand-new Opportunity starts with none uploaded
+    // (the demo seed row below is a stand-in for an existing record only, and names a
+    // specific unrelated product, which would be nonsensical on a blank new record).
+    productFileRequirements: isNew ? [] : (proposal.productFileRequirements ?? [
       { id: 'DOC-SEED-1', name: 'Appointment Letter', type: 'Compulsory' as const, relatedProductItem: 'Pension - MPF/ORSO Appointed Case Only', checkStage: 'Won 100%' }
-    ],
+    ]),
   });
   const [editedOpportunity, setEditedOpportunity] = useState(buildInitialOpportunity);
+
+  // Hard safety net, independent of buildInitialOpportunity's own logic above: a
+  // brand-new Opportunity must never sit at 0% (Case Lost) — force it to the
+  // business type's entry-level stage the moment this record mounts, whatever
+  // the initial value turned out to be. Runs once on mount only.
+  useEffect(() => {
+    if (!isNew) return;
+    if (editedOpportunity.probability !== 0) return;
+    const entryLevel = (editedOpportunity.businessType === 'Renewal' ? RB_PROBABILITY_OPTIONS : NB_PROBABILITY_OPTIONS).find(p => p > 0)!;
+    setEditedOpportunity(prev => ({ ...prev, probability: entryLevel }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Records open in read-only View mode by default; Edit must be explicitly entered.
   // A brand-new (isNew) Opportunity has nothing to view yet, so it opens directly in Edit mode.
@@ -714,7 +751,25 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   // Initialized from whichever reps are already saved, so reopening a multi-rep
   // Opportunity doesn't silently collapse back down to a single rep.
   const [numSalesReps, setNumSalesReps] = useState(() => proposal.salesRep3 ? 3 : proposal.salesRep2 ? 2 : 1);
+
+  // Tags: a searchable dropdown (like SearchableDropdown above) rather than a
+  // plain text input — existing tags are suggested as you type, and a "Create"
+  // row only appears at the bottom when nothing matches exactly, encouraging
+  // reuse over free-typing near-duplicate tags.
   const [tagInput, setTagInput] = useState('');
+  const [tagPanelOpen, setTagPanelOpen] = useState(false);
+  const tagPanelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!tagPanelOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (tagPanelRef.current && !tagPanelRef.current.contains(e.target as Node)) {
+        setTagPanelOpen(false);
+        setTagInput('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [tagPanelOpen]);
 
   // Default Split % Allocation whenever a rep is added/removed (1 -> 100; 2 -> 75/25;
   // 3 -> 50/25/25) — applied only on an actual rep-count change, not on every re-entry
@@ -765,6 +820,22 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   // by accident while scrolling the page — blur so a stray wheel event is a no-op.
   const blurOnWheel = (e: React.WheelEvent<HTMLInputElement>) => e.currentTarget.blur();
 
+  // Removing Rep 2 shifts Rep 3 up into its slot (if present) rather than just
+  // clearing Rep 2 and leaving a gap; decrementing numSalesReps then lets the
+  // existing rep-count effect re-balance the splits (100 / 75-25 / 50-25-25).
+  const removeSalesRep2 = () => {
+    setEditedOpportunity(prev => ({
+      ...prev,
+      salesRep2: prev.salesRep3 || '',
+      salesRep3: '',
+    }));
+    setNumSalesReps(n => Math.max(1, n - 1));
+  };
+  const removeSalesRep3 = () => {
+    setEditedOpportunity(prev => ({ ...prev, salesRep3: '' }));
+    setNumSalesReps(n => Math.max(1, n - 1));
+  };
+
   // Company / Individual selector: two-step (entityType then source); name search is
   // handled inline by the SearchableDropdown itself.
   const initialCompanyMeta = resolveCompanyMeta(proposal.client || 'DEMO COMPANY CO. LTD.');
@@ -774,15 +845,16 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     o.entityType === companyEntityType && o.source === companySource
   );
 
+  // Switching either toggle clears the current pick rather than auto-selecting
+  // the first matching option — the user must explicitly re-choose from the
+  // SearchableDropdown, which then shows its "Please Select" placeholder.
   const handleToggleCompanyEntityType = (t: 'Company' | 'Individual') => {
     setCompanyEntityType(t);
-    const opts = COMPANY_INDIVIDUAL_OPTIONS.filter(o => o.entityType === t && o.source === companySource);
-    setEditedOpportunity(prev => ({ ...prev, company: opts[0]?.label || '', masterType: opts[0]?.masterType || 'Customer' }));
+    setEditedOpportunity(prev => ({ ...prev, company: '', masterType: companySource === 'Lead' ? 'Lead' : 'Customer' }));
   };
   const handleToggleCompanySource = (t: 'Customer' | 'Lead') => {
     setCompanySource(t);
-    const opts = COMPANY_INDIVIDUAL_OPTIONS.filter(o => o.entityType === companyEntityType && o.source === t);
-    setEditedOpportunity(prev => ({ ...prev, company: opts[0]?.label || '', masterType: opts[0]?.masterType || 'Customer' }));
+    setEditedOpportunity(prev => ({ ...prev, company: '', masterType: t === 'Lead' ? 'Lead' : 'Customer' }));
   };
 
   const handleCancelEdit = () => {
@@ -859,7 +931,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   const [productList, setProductList] = useState<any[]>(() => {
     const saved = localStorage.getItem('pr2_products_list');
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { /* fall through to defaults below */ }
+      try { return stripRemovedProductFields(JSON.parse(saved)); } catch (e) { /* fall through to defaults below */ }
     }
     return [
       {
@@ -1012,6 +1084,77 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     try { return JSON.parse(saved); } catch (e) { return INITIAL_EMPLOYER_OPTIONS; }
   });
 
+  // Tag master list — managed inline from this page (see the "Manage" link next to
+  // the Tags label below), the same pattern Product Category/Product Team use in
+  // Product Configuration, rather than a separate Opportunity Configuration tab.
+  // Suggestions filter as the user types, to raise awareness of an existing tag
+  // before they type out a near-duplicate of their own.
+  const [tagOptions, setTagOptions] = useState<string[]>(() => {
+    const saved = localStorage.getItem('pr2_tags');
+    if (!saved) return INITIAL_TAGS;
+    try { return JSON.parse(saved); } catch (e) { return INITIAL_TAGS; }
+  });
+  useEffect(() => { localStorage.setItem('pr2_tags', JSON.stringify(tagOptions)); }, [tagOptions]);
+
+  const [showTagManagePopup, setShowTagManagePopup] = useState(false);
+  const [tagManageMode, setTagManageMode] = useState<'create' | 'rename'>('create');
+  const [tagManageOriginalValue, setTagManageOriginalValue] = useState('');
+  const [tagManageInput, setTagManageInput] = useState('');
+
+  // Same "warn before discarding an unsaved add/rename" guard as
+  // isTeamPopupDirty/isCategoryPopupDirty in ProductsConfiguration.tsx.
+  const isTagManagePopupDirty = () => tagManageMode === 'create' ? tagManageInput.trim() !== '' : tagManageInput !== tagManageOriginalValue;
+  const closeTagManagePopup = () => {
+    if (isTagManagePopupDirty() && !confirm('You have unsaved changes. Discard them and close?')) return;
+    setShowTagManagePopup(false);
+    setTagManageMode('create');
+    setTagManageOriginalValue('');
+    setTagManageInput('');
+  };
+  const handleTagManageSave = () => {
+    const trimmed = tagManageInput.trim();
+    if (!trimmed) { alert('Tag name is required.'); return; }
+    if (tagManageMode === 'create') {
+      if (tagOptions.some(t => t.toLowerCase() === trimmed.toLowerCase())) { alert('A tag with this name already exists.'); return; }
+      setTagOptions([...tagOptions, trimmed]);
+    } else {
+      if (tagOptions.some(t => t.toLowerCase() === trimmed.toLowerCase() && t !== tagManageOriginalValue)) { alert('A tag with this name already exists.'); return; }
+      setTagOptions(tagOptions.map(t => t === tagManageOriginalValue ? trimmed : t));
+      // Cascade the rename to every Proposal already carrying the old tag name
+      // (this record's own draft plus every other saved Proposal) — otherwise
+      // those records keep the stale name and it silently falls out of sync
+      // with the master list, the same fix applied to Product Category rename.
+      if (trimmed !== tagManageOriginalValue) {
+        setEditedOpportunity(prev => ({
+          ...prev,
+          tags: prev.tags.map(t => t === tagManageOriginalValue ? trimmed : t),
+        }));
+        onTagRenamed?.(tagManageOriginalValue, trimmed);
+      }
+    }
+    setTagManageInput('');
+    setTagManageMode('create');
+    setTagManageOriginalValue('');
+  };
+  const handleTagManageDelete = (value: string) => {
+    // Same block-while-in-use guard as Product Category/Product Team's delete
+    // (only counting Active records — an Archived Proposal can't block it).
+    const usedHere = editedOpportunity.tags.includes(value);
+    const otherActiveUsers = (allProposals || [])
+      .filter(p => p.id !== proposal.id && p.status !== 'Archived')
+      .filter(p => (p.tags || []).includes(value));
+    const totalCount = otherActiveUsers.length + (usedHere ? 1 : 0);
+    if (totalCount > 0) {
+      const exampleName = usedHere ? (editedOpportunity.name || proposal.name) : otherActiveUsers[0].name;
+      alert(`Cannot delete tag because it is currently linked to ${totalCount} active record(s) (e.g. "${exampleName}").`);
+      return;
+    }
+    if (confirm(`Are you sure you want to delete "${value}"?`)) {
+      setTagOptions(tagOptions.filter(t => t !== value));
+      onTagDeleted?.(value);
+    }
+  };
+
   // Generic renderer for a Product Opportunity Evaluation field, driven by EVAL_FIELD_SPECS
   const renderEvalField = (f: { name: string; required?: boolean }) => {
     const spec = EVAL_FIELD_SPECS[f.name] || { type: 'text' as const };
@@ -1089,7 +1232,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
             options={options.map(o => ({ id: o, label: o, value: o }))}
             onSelect={o => handleSaveEvaluation({ ...evaluationValues, [f.name]: o })}
             placeholder={`Search ${manageLabel}...`}
-            buttonPlaceholder={`Select ${manageLabel}`}
+            buttonPlaceholder={`Please Select ${manageLabel}`}
           />
         );
         break;
@@ -1110,7 +1253,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
               });
             }}
             placeholder="Search Employer Option..."
-            buttonPlaceholder="Select Employer Option"
+            buttonPlaceholder="Please Select Employer Option"
           />
         );
         break;
@@ -1131,7 +1274,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
             options={EMPLOYEE_DIRECTORY.map(o => ({ id: o, label: o, value: o }))}
             onSelect={o => handleSaveEvaluation({ ...evaluationValues, [f.name]: o })}
             placeholder="Search Employee..."
-            buttonPlaceholder="Select Employee"
+            buttonPlaceholder="Please Select Employee"
           />
         );
         break;
@@ -1206,9 +1349,10 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     const missingFields: string[] = [];
     if (!editedOpportunity.name.trim()) missingFields.push('Oppty Name');
     if (editedOpportunity.probability === undefined || editedOpportunity.probability === null || Number.isNaN(editedOpportunity.probability)) missingFields.push('Probability');
+    else if (isNew && editedOpportunity.probability === 0) missingFields.push('Probability');
     if (!editedOpportunity.company.trim()) missingFields.push('Company / Individual');
     if (!editedOpportunity.campaign.trim()) missingFields.push('Campaign');
-    if (!editedOpportunity.salesRep1.trim()) missingFields.push('Sales Rep 1');
+    if (!editedOpportunity.salesRep1.trim()) missingFields.push('Primary Owner');
     if (!editedOpportunity.productItem.trim()) missingFields.push('Product Item');
     if (missingFields.length > 0) {
       setValidationError(`Please fill in the following required field(s): ${missingFields.join(', ')}.`);
@@ -1231,6 +1375,22 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       setValidationError(`Sales Rep Split % must total 100% (currently ${totalSplitPercent}%). Please adjust the Multi-Sales Split % Allocation before saving.`);
       return;
     }
+
+    // Re-check Probability against the *currently selected* Product Item's rules at
+    // save time — the dropdown only filters options at the moment you open it, so
+    // picking Probability before Product Item (or changing Product Item afterward)
+    // could otherwise leave a stale, now-invalid Probability value unblocked.
+    const isRenewalForSave = editedOpportunity.businessType === 'Renewal';
+    const restrictedForSave = getRestrictedStages(editedOpportunity.productItem, isRenewalForSave);
+    const uploadBlockedForSave = getUploadBlockedStages(editedOpportunity.productItem, isRenewalForSave, editedOpportunity.productFileRequirements);
+    if (restrictedForSave.includes(editedOpportunity.probability)) {
+      setValidationError(`${editedOpportunity.probability}% is a restricted stage for "${editedOpportunity.productItem}" (see Product Configuration). Please choose a different Probability.`);
+      return;
+    }
+    if (uploadBlockedForSave.includes(editedOpportunity.probability)) {
+      setValidationError(`"${editedOpportunity.productItem}" has a required document upload outstanding at an earlier stage. Please upload it (see Product File Requirements below) before saving at ${editedOpportunity.probability}%.`);
+      return;
+    }
     setValidationError(null);
 
     // Master Type conversion is only committed once a 100% probability is actually
@@ -1248,6 +1408,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       name: editedOpportunity.name,
       stage: editedOpportunity.stage as any,
       probability: editedOpportunity.probability,
+      lastUpdated: new Date().toISOString().slice(0, 10),
       effectiveDate: editedOpportunity.effectiveDate1,
       effectiveDate2: editedOpportunity.effectiveDate2 || undefined,
       effectiveDate3: editedOpportunity.effectiveDate3 || undefined,
@@ -1489,7 +1650,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       )}
                     </div>
                   )}
-                  <p className="text-xs text-gray-500 mt-1">Customer: {editedOpportunity.company} · Rep: {editedOpportunity.salesRep1}</p>
+                  <p className="text-xs text-gray-500 mt-1">Customer: {editedOpportunity.company} · Primary Owner: {editedOpportunity.salesRep1}</p>
                 </div>
                 <div className="flex gap-2">
                   {isEditMode ? (
@@ -1550,6 +1711,10 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                           const restricted = getRestrictedStages(editedOpportunity.productItem, isRenewal);
                           const uploadBlocked = getUploadBlockedStages(editedOpportunity.productItem, isRenewal, editedOpportunity.productFileRequirements);
                           const options = (isRenewal ? RB_PROBABILITY_OPTIONS : NB_PROBABILITY_OPTIONS)
+                            // A brand-new Opportunity always starts at a real entry-level
+                            // probability (see buildInitialOpportunity) — it can't be
+                            // created directly as Case Lost, so 0% is never offered here.
+                            .filter(p => !(isNew && p === 0))
                             .filter(p => !restricted.includes(p) && !uploadBlocked.includes(p));
                           return (
                             <>
@@ -1568,11 +1733,11 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                     )}
                   </div>
                 </div>
-                {editedOpportunity.probability === 0 && (
+                {!isNew && editedOpportunity.probability === 0 && (
                   <div className="mt-4 max-w-xs">
                     <FieldView label="Loss Reason" required editing={isEditMode} viewValue={editedOpportunity.lossReason || '—'}>
                       <select value={editedOpportunity.lossReason} onChange={e => setEditedOpportunity({...editedOpportunity, lossReason: e.target.value})} className="w-full px-2.5 py-1.5 border border-red-200 bg-red-50/20 rounded text-xs text-red-900 font-semibold">
-                        <option value="">-- Select Loss Reason --</option>
+                        <option value="">Please Select Loss Reason</option>
                         {LOSS_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                       </select>
                     </FieldView>
@@ -1580,6 +1745,32 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                 )}
               </div>
               <p className="text-xs text-gray-500 -mt-2">Net Amount: <span className="font-bold text-gray-700">HK${netAmount.toLocaleString()}</span></p>
+
+              {/* System-generated metadata — view/preview only, hidden while creating or editing */}
+              {!isEditMode && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Opportunity Status</label>
+                    <span className="text-xs font-semibold text-gray-700">{proposal.status === 'Archived' ? 'Archived' : 'Active'}</span>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Opportunity Code</label>
+                    <span className="text-xs font-mono text-gray-700">{editedOpportunity.opptyOdooId}</span>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Oppty Stage Change Date</label>
+                    <span className="text-xs font-mono text-gray-700">{editedOpportunity.opptyStageChangeDate}</span>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Created On</label>
+                    <span className="text-xs font-mono text-gray-700">{editedOpportunity.createdOn}</span>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Updated On</label>
+                    <span className="text-xs font-mono text-gray-700">{proposal.lastUpdated}</span>
+                  </div>
+                </div>
+              )}
 
               {/* Opportunity Information */}
               <div className="bg-white p-5 rounded-lg border border-gray-200 shadow-sm">
@@ -1618,7 +1809,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                             setEditedOpportunity({...editedOpportunity, company: label, masterType: chosen?.masterType || editedOpportunity.masterType});
                           }}
                           placeholder="Search by name..."
-                          buttonPlaceholder="Select Company / Individual"
+                          buttonPlaceholder={`Please Select ${companyEntityType} ${companySource}`}
                         />
                       </div>
                     ) : (
@@ -1646,7 +1837,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                     )}
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Oppty Status</label>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Oppty Stage</label>
                     <input type="text" value={editedOpportunity.stage} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-semibold outline-none cursor-not-allowed" />
                   </div>
                   <FieldView label="Campaign" required editing={isEditMode} viewValue={editedOpportunity.campaign}>
@@ -1655,13 +1846,9 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       options={CAMPAIGN_OPTIONS.map(name => ({ id: name, label: name, value: name }))}
                       onSelect={c => setEditedOpportunity({...editedOpportunity, campaign: c})}
                       placeholder="Search campaign..."
-                      buttonPlaceholder="Select Campaign"
+                      buttonPlaceholder="Please Select Campaign"
                     />
                   </FieldView>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Oppty Odoo ID</label>
-                    <input type="text" value={editedOpportunity.opptyOdooId} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono outline-none cursor-not-allowed" />
-                  </div>
                   {['Draft', 'Finalize', 'Policy'].includes(editedOpportunity.stage) && (
                     <FieldView label="Effective Date" editing={isEditMode} viewValue={editedOpportunity.effectiveDate1 || '—'}>
                       <input type="date" min="1900-01-01" max="2100-12-31" value={editedOpportunity.effectiveDate1} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate1: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
@@ -1678,7 +1865,18 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                     </FieldView>
                   )}
                   <div className="md:col-span-3">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Tags</label>
+                    <div className="flex items-center gap-2 mb-1">
+                      <label className="text-[10px] font-black uppercase text-gray-400 block">Tags</label>
+                      {isEditMode && (
+                        <button
+                          type="button"
+                          onClick={() => { setTagManageInput(''); setTagManageMode('create'); setShowTagManagePopup(true); }}
+                          className="text-[9px] text-orange-600 font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
+                        >
+                          <Settings size={10} /> Manage
+                        </button>
+                      )}
+                    </div>
                     <div className="flex flex-wrap gap-1.5 mb-2">
                       {editedOpportunity.tags.map((tag, idx) => (
                         <span key={idx} className="inline-flex items-center gap-1 bg-orange-50 border border-orange-200 text-orange-700 px-2 py-0.5 rounded-full text-[10px] font-semibold">
@@ -1692,39 +1890,60 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       ))}
                       {editedOpportunity.tags.length === 0 && <span className="text-xs text-gray-400">—</span>}
                     </div>
-                    {isEditMode && (
-                      <div className="flex gap-1.5 max-w-sm">
-                        <input
-                          type="text"
-                          value={tagInput}
-                          onChange={e => setTagInput(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter' && tagInput.trim()) {
-                              setEditedOpportunity({...editedOpportunity, tags: [...editedOpportunity.tags, tagInput.trim()]});
-                              setTagInput('');
-                            }
-                          }}
-                          placeholder="Add a tag and press Enter"
-                          className="flex-1 px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50"
-                        />
-                        <button
-                          onClick={() => {
-                            if (tagInput.trim()) {
-                              setEditedOpportunity({...editedOpportunity, tags: [...editedOpportunity.tags, tagInput.trim()]});
-                              setTagInput('');
-                            }
-                          }}
-                          className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded text-xs font-bold text-gray-600"
-                        >
-                          Add
-                        </button>
-                      </div>
-                    )}
+                    {isEditMode && (() => {
+                      // Pure select-from-existing-options picker — same division of
+                      // responsibility as Product Category in Product Configuration:
+                      // this only attaches/removes tags on THIS record. Creating,
+                      // renaming, or deleting a tag DEFINITION is exclusively the
+                      // "Manage" popup's job (see below), never done inline here.
+                      const selectTag = (tag: string) => {
+                        if (editedOpportunity.tags.some(t => t.toLowerCase() === tag.toLowerCase())) return;
+                        setEditedOpportunity({...editedOpportunity, tags: [...editedOpportunity.tags, tag]});
+                        setTagInput('');
+                        setTagPanelOpen(false);
+                      };
+                      const query = tagInput.trim().toLowerCase();
+                      const matches = tagOptions.filter(t =>
+                        t.toLowerCase().includes(query) &&
+                        !editedOpportunity.tags.some(existing => existing.toLowerCase() === t.toLowerCase())
+                      );
+                      return (
+                        <div className="relative max-w-sm" ref={tagPanelRef}>
+                          <input
+                            type="text"
+                            value={tagInput}
+                            onChange={e => setTagInput(e.target.value)}
+                            onFocus={() => setTagPanelOpen(true)}
+                            onKeyDown={e => { if (e.key === 'Enter' && matches.length === 1) selectTag(matches[0]); }}
+                            placeholder="Search existing tags..."
+                            className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                          />
+                          {tagPanelOpen && (
+                            <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                              {matches.length === 0 && (
+                                <div className="px-2.5 py-2 text-xs text-gray-400 italic">
+                                  {query ? 'No matching tags — use Manage to add a new one.' : 'No more tags to reuse — use Manage to add a new one.'}
+                                </div>
+                              )}
+                              {matches.map(s => (
+                                <button
+                                  key={s}
+                                  type="button"
+                                  onClick={() => selectTag(s)}
+                                  className="w-full text-left px-2.5 py-1.5 text-xs text-gray-700 hover:bg-orange-50 hover:text-orange-700"
+                                >
+                                  {s}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                   <FieldView label="Remark" editing={isEditMode} viewValue={editedOpportunity.opportunityNotes || '—'} className="md:col-span-3">
                     <textarea value={editedOpportunity.opportunityNotes} onChange={e => setEditedOpportunity({...editedOpportunity, opportunityNotes: e.target.value})} className="w-full h-20 px-2 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 resize-none" placeholder="Provide any comments or deal constraints..." />
                   </FieldView>
-                  <p className="md:col-span-3 text-[10px] text-gray-400 pt-2 border-t border-gray-100">Oppty Stage Change Date: <span className="font-mono text-gray-600">{editedOpportunity.opptyStageChangeDate}</span> · Created on: <span className="font-mono text-gray-600">{editedOpportunity.createdOn}</span></p>
                 </div>
               </div>
 
@@ -1747,7 +1966,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       productCategory: resolveProductCategory(selectedItem)
                     })}
                     placeholder="Search product item..."
-                    buttonPlaceholder="Select Product Item"
+                    buttonPlaceholder="Please Select Product Item"
                   />
                 </FieldView>
                 <div>
@@ -1776,7 +1995,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
               </h3>
               <div className="text-xs">
                 <div className="max-w-xs mb-4">
-                  <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Sales Team</label>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Sales Team (Primary Owner)</label>
                   <input type="text" value={SALES_REP_TEAM_MAP[editedOpportunity.salesRep1] || 'Unassigned'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-semibold outline-none cursor-not-allowed" />
                 </div>
                 <div>
@@ -1784,15 +2003,21 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                   <table className="w-full border text-xs">
                     <thead>
                       <tr className="bg-gray-50 text-[10px] font-bold text-gray-500 border-b">
+                        <th className="p-2 text-left w-28">Role</th>
                         <th className="p-2 text-left">Sales Representative <span className="text-red-500">*</span></th>
                         <th className="p-2 text-right w-24">Split %</th>
+                        <th className="p-2 w-8"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y font-semibold">
                       <tr>
                         <td className="p-2">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-orange-50 text-orange-700 border border-orange-200">Primary Owner</span>
+                        </td>
+                        <td className="p-2">
                           {isEditMode ? (
                             <select value={editedOpportunity.salesRep1} onChange={e => setEditedOpportunity({...editedOpportunity, salesRep1: e.target.value})} className="w-full px-1.5 py-1 border border-gray-200 rounded text-xs">
+                              <option value="">Please Select</option>
                               {SALES_REPS.map(r => <option key={r} value={r}>{r}</option>)}
                             </select>
                           ) : <span>{editedOpportunity.salesRep1}</span>}
@@ -1815,13 +2040,17 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                             />
                           )
                         ) : <span className="block text-right font-mono">{editedOpportunity.split1}</span>}</td>
+                        <td className="p-2"></td>
                       </tr>
                       {(isEditMode ? numSalesReps >= 2 : !!editedOpportunity.salesRep2) && (
                         <tr>
                           <td className="p-2">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-gray-100 text-gray-600 border border-gray-200">Secondary</span>
+                          </td>
+                          <td className="p-2">
                             {isEditMode ? (
                               <select value={editedOpportunity.salesRep2} onChange={e => setEditedOpportunity({...editedOpportunity, salesRep2: e.target.value})} className="w-full px-1.5 py-1 border border-gray-200 rounded text-xs">
-                                <option value="">-- Select --</option>
+                                <option value="">Please Select</option>
                                 {SALES_REPS.map(r => <option key={r} value={r}>{r}</option>)}
                               </select>
                             ) : <span>{editedOpportunity.salesRep2}</span>}
@@ -1844,14 +2073,24 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                               />
                             )
                           ) : <span className="block text-right font-mono">{editedOpportunity.split2}</span>}</td>
+                          <td className="p-2">
+                            {isEditMode && (
+                              <button type="button" onClick={removeSalesRep2} title="Remove this Sales Rep" className="text-gray-400 hover:text-red-600">
+                                <XCircle size={13} />
+                              </button>
+                            )}
+                          </td>
                         </tr>
                       )}
                       {(isEditMode ? numSalesReps >= 3 : !!editedOpportunity.salesRep3) && (
                         <tr>
                           <td className="p-2">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-gray-100 text-gray-600 border border-gray-200">Secondary</span>
+                          </td>
+                          <td className="p-2">
                             {isEditMode ? (
                               <select value={editedOpportunity.salesRep3} onChange={e => setEditedOpportunity({...editedOpportunity, salesRep3: e.target.value})} className="w-full px-1.5 py-1 border border-gray-200 rounded text-xs">
-                                <option value="">-- Select --</option>
+                                <option value="">Please Select</option>
                                 {SALES_REPS.map(r => <option key={r} value={r}>{r}</option>)}
                               </select>
                             ) : <span>{editedOpportunity.salesRep3}</span>}
@@ -1859,6 +2098,13 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                           <td className="p-2">{isEditMode ? (
                             <input type="text" value={editedOpportunity.split3} readOnly title="Auto-calculated to complete 100%" className="w-full p-1 border border-gray-100 bg-gray-100 rounded text-xs text-right font-mono text-gray-500 cursor-not-allowed" />
                           ) : <span className="block text-right font-mono">{editedOpportunity.split3}</span>}</td>
+                          <td className="p-2">
+                            {isEditMode && (
+                              <button type="button" onClick={removeSalesRep3} title="Remove this Sales Rep" className="text-gray-400 hover:text-red-600">
+                                <XCircle size={13} />
+                              </button>
+                            )}
+                          </td>
                         </tr>
                       )}
                     </tbody>
@@ -1872,6 +2118,60 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                 </div>
               </div>
             </div>
+
+            {/* 4. Report & Dashboard — view/preview only, hidden while creating or editing */}
+            {!isEditMode && (
+              <div className="bg-white p-5 rounded-lg border border-gray-200 shadow-sm">
+                <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-4 border-b border-gray-100 pb-1.5 flex items-center gap-1.5">
+                  <BarChart2 size={14} className="text-orange-500" />
+                  Report &amp; Dashboard
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs mb-4">
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Sales Rep 1 Gross Amount</label>
+                    <input type="text" value={`HK$${editedOpportunity.salesRep1GrossAmount.toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Sales Rep 1 Net Amount</label>
+                    <input type="text" value={`HK$${editedOpportunity.salesRep1NetAmount.toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
+                  </div>
+                  {!!editedOpportunity.salesRep2 && (
+                    <>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Sales Rep 2 Gross Amount</label>
+                        <input type="text" value={`HK$${editedOpportunity.salesRep2GrossAmount.toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Sales Rep 2 Net Amount</label>
+                        <input type="text" value={`HK$${editedOpportunity.salesRep2NetAmount.toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
+                      </div>
+                    </>
+                  )}
+                  {!!editedOpportunity.salesRep3 && (
+                    <>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Sales Rep 3 Gross Amount</label>
+                        <input type="text" value={`HK$${editedOpportunity.salesRep3GrossAmount.toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Sales Rep 3 Net Amount</label>
+                        <input type="text" value={`HK$${editedOpportunity.salesRep3NetAmount.toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
+                      </div>
+                    </>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs pt-3 border-t border-gray-100">
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Oppty Reject Date</label>
+                    <input type="text" value={editedOpportunity.opptyRejectDate || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Oppty Reject Frequency</label>
+                    <input type="text" value={String(editedOpportunity.opptyRejectFrequency)} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* 5. Product Opportunity Evaluation */}
             <div className="bg-white p-5 rounded-lg border border-gray-200 shadow-sm">
@@ -1937,58 +2237,6 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       <p className="text-gray-400 text-xs italic">No visible date & transfer fields are configured for this product.</p>
                     )}
                   </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 6. Report & Dashboard */}
-            <div className="bg-white p-5 rounded-lg border border-gray-200 shadow-sm">
-              <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-4 border-b border-gray-100 pb-1.5 flex items-center gap-1.5">
-                <BarChart2 size={14} className="text-orange-500" />
-                Report &amp; Dashboard
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs mb-4">
-                <div>
-                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Sales Rep 1 Gross Amount</label>
-                  <input type="text" value={`HK$${editedOpportunity.salesRep1GrossAmount.toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Sales Rep 1 Net Amount</label>
-                  <input type="text" value={`HK$${editedOpportunity.salesRep1NetAmount.toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
-                </div>
-                {!!editedOpportunity.salesRep2 && (
-                  <>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Sales Rep 2 Gross Amount</label>
-                      <input type="text" value={`HK$${editedOpportunity.salesRep2GrossAmount.toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Sales Rep 2 Net Amount</label>
-                      <input type="text" value={`HK$${editedOpportunity.salesRep2NetAmount.toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
-                    </div>
-                  </>
-                )}
-                {!!editedOpportunity.salesRep3 && (
-                  <>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Sales Rep 3 Gross Amount</label>
-                      <input type="text" value={`HK$${editedOpportunity.salesRep3GrossAmount.toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Sales Rep 3 Net Amount</label>
-                      <input type="text" value={`HK$${editedOpportunity.salesRep3NetAmount.toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
-                    </div>
-                  </>
-                )}
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs pt-3 border-t border-gray-100">
-                <div>
-                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Oppty Reject Date</label>
-                  <input type="text" value={editedOpportunity.opptyRejectDate || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Oppty Reject Frequency</label>
-                  <input type="text" value={String(editedOpportunity.opptyRejectFrequency)} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-mono cursor-not-allowed outline-none" />
                 </div>
               </div>
             </div>
@@ -2107,6 +2355,79 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
         message="This Opportunity was saved, but part of the update may not have gone through correctly. Please check the record with engineering before relying on it."
         onClose={() => setShowSaveIncompleteError(false)}
       />
+      {/* Manage Tags popup — same inline pattern as Product Category/Product Team
+          in Product Configuration, rather than a separate Opportunity Configuration tab. */}
+      {showTagManagePopup && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-md overflow-hidden flex flex-col animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-gray-150 px-5 py-3.5 bg-gray-50">
+              <span className="text-xs font-black uppercase text-gray-900 tracking-wider">Manage Tags</span>
+              <button onClick={closeTagManagePopup} className="p-1 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 cursor-pointer">
+                <X size={15} />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase text-gray-400 block">
+                  {tagManageMode === 'create' ? 'Add New Tag' : 'Rename Selected Tag'}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={tagManageInput}
+                    onChange={e => setTagManageInput(e.target.value)}
+                    placeholder="e.g. Corporate"
+                    autoFocus
+                    className="flex-1 px-3 py-1.5 border rounded-lg border-gray-300 focus:border-orange-500 outline-none text-xs font-bold text-gray-800 bg-white h-9"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleTagManageSave}
+                    className="px-4 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-bold uppercase text-[9px] rounded-lg shadow-sm flex items-center justify-center gap-1 cursor-pointer h-9"
+                  >
+                    {tagManageMode === 'create' ? 'Add' : 'Save'}
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1.5 max-h-60 overflow-y-auto border rounded-xl divide-y p-2 bg-gray-50/50">
+                {tagOptions.map((tag, idx) => (
+                  <div key={idx} className="flex items-center justify-between py-1.5 px-2 hover:bg-white rounded transition-colors text-xs font-semibold text-gray-700">
+                    <span>{tag}</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => { setTagManageInput(tag); setTagManageMode('rename'); setTagManageOriginalValue(tag); }}
+                        className="p-1 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded"
+                        title="Rename Tag"
+                      >
+                        <Pencil size={11} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleTagManageDelete(tag)}
+                        className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                        title="Delete Tag"
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {tagOptions.length === 0 && <p className="text-xs text-gray-400 italic px-2 py-1.5">No tags defined yet.</p>}
+              </div>
+            </div>
+            <div className="border-t border-gray-150 px-5 py-3 bg-gray-50 flex justify-end">
+              <button
+                type="button"
+                onClick={closeTagManagePopup}
+                className="px-4 py-1.5 bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 font-bold uppercase text-[9px] rounded-lg cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <Toast message={toast} />
     </div>
   );

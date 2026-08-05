@@ -41,6 +41,19 @@ const resolveCompanyMeta = (label: string) => {
 };
 const CAMPAIGN_OPTIONS = MOCK_CAMPAIGNS.filter(c => c.active).map(c => c.name);
 
+// "Member First Name"/"Member Last Name" were removed from Product Configuration's
+// field catalog, but a product saved to localStorage from before that change still
+// carries them baked into its own vendorFields/premiumFields/dateTransferFields
+// array — this strips them out of whatever's loaded so they stop rendering here
+// regardless of when the product was last saved in Product Configuration.
+const REMOVED_PRODUCT_FIELD_NAMES = ['Member First Name', 'Member Last Name'];
+const stripRemovedProductFields = (list: any[]): any[] => list.map(p => ({
+  ...p,
+  vendorFields: (p.vendorFields || []).filter((f: any) => !REMOVED_PRODUCT_FIELD_NAMES.includes(f.name)),
+  premiumFields: (p.premiumFields || []).filter((f: any) => !REMOVED_PRODUCT_FIELD_NAMES.includes(f.name)),
+  dateTransferFields: (p.dateTransferFields || []).filter((f: any) => !REMOVED_PRODUCT_FIELD_NAMES.includes(f.name)),
+}));
+
 // Mock master list for Product Opportunity Evaluation "Insurer" lookup (fixed list,
 // no in-page management UI). MPF Schemes are managed on the Opportunity Configuration page.
 const INITIAL_INSURERS = [
@@ -1198,7 +1211,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   const [productList, setProductList] = useState<any[]>(() => {
     const saved = localStorage.getItem('pr2_products_list');
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { /* fall through to defaults below */ }
+      try { return stripRemovedProductFields(JSON.parse(saved)); } catch (e) { /* fall through to defaults below */ }
     }
     return [
       {

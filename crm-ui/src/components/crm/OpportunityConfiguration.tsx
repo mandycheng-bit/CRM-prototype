@@ -357,6 +357,7 @@ export default function OpportunityConfiguration() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

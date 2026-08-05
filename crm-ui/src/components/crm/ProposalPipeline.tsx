@@ -147,6 +147,16 @@ const parseCsv = (text: string): string[][] => {
 };
 
 const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, proposals, initialBusinessType = 'NB', onImportProposals, onUpdateProposal, onDeleteProposal, onCreateProspect }) => {
+  // Guards action controls (New Prospect, More/Export/Template/Import, row Archive/
+  // Delete/Actions menus) while data is loading — true briefly on mount (there's no
+  // real backend yet, so this simulates the loading window) and while a CSV import
+  // file is being read/parsed. Filters, search, and view toggles are left enabled
+  // throughout, since they don't mutate anything.
+  const [isLoading, setIsLoading] = useState(true);
+  useEffect(() => {
+    const timer = setTimeout(() => setIsLoading(false), 600);
+    return () => clearTimeout(timer);
+  }, []);
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
   const [dealsView, setDealsView] = useState<DealsView>('active');
   // Collapsed Board columns (by column label) — lets the Sales Rep shrink
@@ -188,7 +198,6 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
       }
       if (exportPanelRef.current && !exportPanelRef.current.contains(e.target as Node)) {
         setShowMoreMenu(false);
-        setShowExportPanel(false);
       }
       if (rowMenuRef.current && !rowMenuRef.current.contains(e.target as Node)) {
         setOpenRowMenuId(null);
@@ -244,8 +253,10 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
     e.target.value = '';
     if (!file) return;
 
+    setIsLoading(true);
     const reader = new FileReader();
     reader.onerror = () => {
+      setIsLoading(false);
       alert(`Could not read "${file.name}". The file may be locked, corrupted, or removed — please try selecting it again.`);
     };
     reader.onload = () => {
@@ -254,6 +265,8 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
       } catch (err) {
         console.error('Unexpected error while importing CSV:', err);
         alert(`Import failed unexpectedly and no rows were added. Please check the file and try again.\n\nDetails: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        setIsLoading(false);
       }
     };
     reader.readAsText(file);
@@ -525,9 +538,6 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                 <button onClick={() => toggleColumnCollapsed(column)} title={`Collapse ${column}`} className="text-gray-400 hover:text-gray-600">
                   <ChevronLeft size={14} />
                 </button>
-                <button className="text-gray-400 hover:text-gray-600">
-                  <MoreHorizontal size={14} />
-                </button>
               </div>
             </div>
 
@@ -586,7 +596,8 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                           <div className="relative">
                             <button
                               onClick={(e) => { e.stopPropagation(); setOpenRowMenuId(openRowMenuId === proposal.id ? null : proposal.id); }}
-                              className="text-gray-400 hover:text-gray-700 p-0.5 rounded hover:bg-gray-100"
+                              disabled={isLoading}
+                              className="text-gray-400 hover:text-gray-700 p-0.5 rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                             >
                               <MoreVertical size={12} />
                             </button>
@@ -637,12 +648,6 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                 ))}
               </div>
               
-              {dealsView === 'active' && !isProblemColumn && (
-                <button className="w-full py-2 border border-dashed border-gray-300 rounded-lg text-gray-400 hover:text-orange-500 hover:border-orange-200 hover:bg-orange-50/20 transition-all flex items-center justify-center gap-2 text-xs font-medium mt-auto">
-                  <Plus size={14} />
-                  <span>Add Card</span>
-                </button>
-              )}
             </div>
           </div>
         );
@@ -656,16 +661,15 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
         <table className="w-full text-sm whitespace-nowrap">
           <thead className="bg-gray-50 text-gray-500 uppercase text-[10px] font-bold sticky top-0 z-10">
             <tr>
-              {showExportPanel && (
-                <th className="px-4 py-4 text-left">
-                  <input
-                    type="checkbox"
-                    checked={allFilteredSelected}
-                    onChange={toggleSelectAllFiltered}
-                    title="Select/deselect all filtered rows for export"
-                  />
-                </th>
-              )}
+              <th className="px-4 py-4 text-left">
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  onChange={toggleSelectAllFiltered}
+                  disabled={isLoading}
+                  title="Select/deselect all filtered rows for export"
+                />
+              </th>
               <th className="px-6 py-4 text-left">Prospect ID</th>
               <th className="px-6 py-4 text-left">Prospect Name</th>
               <th className="px-6 py-4 text-left">Company</th>
@@ -684,15 +688,14 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                 className="hover:bg-gray-50 transition-colors group cursor-pointer"
                 onClick={() => onProposalClick(proposal)}
               >
-                {showExportPanel && (
-                  <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      checked={selectedProposalIds.has(proposal.id)}
-                      onChange={() => toggleProposalSelected(proposal.id)}
-                    />
-                  </td>
-                )}
+                <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={selectedProposalIds.has(proposal.id)}
+                    onChange={() => toggleProposalSelected(proposal.id)}
+                    disabled={isLoading}
+                  />
+                </td>
                 <td className="px-6 py-4 font-mono text-xs text-blue-600 font-medium">{proposal.id}</td>
                 <td className="px-6 py-4">
                   <div className="flex flex-col">
@@ -760,7 +763,8 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                       const rect = e.currentTarget.getBoundingClientRect();
                       setListRowMenu({ proposal, top: rect.bottom + 4, left: rect.right - 176 });
                     }}
-                    className="p-1.5 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-lg inline-flex items-center"
+                    disabled={isLoading}
+                    className="p-1.5 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-lg inline-flex items-center disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                   >
                     <MoreVertical size={16} />
                   </button>
@@ -923,15 +927,16 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
           <div className="relative" ref={exportPanelRef}>
             <button
               onClick={() => { setShowMoreMenu(prev => !prev); setShowExportPanel(false); }}
-              className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 whitespace-nowrap"
+              disabled={isLoading}
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
             >
               <MoreHorizontal size={14} />
               <span>More</span>
             </button>
-            {showMoreMenu && !showExportPanel && (
+            {showMoreMenu && (
               <div className="absolute right-0 mt-2 w-44 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1">
                 <button
-                  onClick={() => { setViewMode('list'); setShowExportPanel(true); setExportValidationError(null); }}
+                  onClick={() => { setShowMoreMenu(false); setViewMode('list'); setShowExportPanel(true); setExportValidationError(null); }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 text-left"
                 >
                   <Download size={14} />
@@ -954,62 +959,9 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                 </button>
               </div>
             )}
-            {showExportPanel && (
-              <div className="absolute right-0 mt-2 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-20 p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-black uppercase text-gray-900 tracking-wider">Export</span>
-                  <button
-                    type="button"
-                    onClick={() => setShowExportPanel(false)}
-                    className="p-0.5 text-gray-400 hover:text-gray-700 rounded hover:bg-gray-100"
-                    title="Close"
-                  >
-                    <XCircle size={15} />
-                  </button>
-                </div>
-                <p className="text-[11px] text-gray-500 mb-2">
-                  {selectedProposals.length} of {filteredProposals.length} filtered row(s) selected — check/uncheck rows in List view.
-                </p>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-gray-700">Export Columns</span>
-                  <div className="flex gap-2">
-                    <button onClick={() => setSelectedExportFields(new Set(EXPORT_FIELD_DEFS.map(f => f.key)))} className="text-[11px] text-orange-600 hover:text-orange-700 font-medium">All</button>
-                    <button onClick={() => setSelectedExportFields(new Set())} className="text-[11px] text-gray-500 hover:text-gray-700 font-medium">None</button>
-                  </div>
-                </div>
-                <div className="flex flex-col gap-1 mb-3 max-h-64 overflow-y-auto">
-                  {EXPORT_FIELD_DEFS.map(f => (
-                    <label key={f.key} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5">
-                      <input
-                        type="checkbox"
-                        checked={selectedExportFields.has(f.key)}
-                        onChange={() => setSelectedExportFields(prev => {
-                          const next = new Set(prev);
-                          if (next.has(f.key)) next.delete(f.key); else next.add(f.key);
-                          return next;
-                        })}
-                      />
-                      {f.label}
-                    </label>
-                  ))}
-                </div>
-                {exportValidationError && (
-                  <p className="text-[11px] text-red-600 font-medium mb-2">{exportValidationError}</p>
-                )}
-                <div className="flex gap-2">
-                  <button onClick={() => setShowExportPanel(false)} className="px-3 py-1.5 bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 rounded-lg text-xs font-bold">
-                    Cancel
-                  </button>
-                  <button onClick={handleExportCsv} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-orange-500 text-white rounded-lg text-xs font-bold hover:bg-orange-600">
-                    <Download size={12} />
-                    <span>Export {selectedProposals.length} row(s) as CSV</span>
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
           <input type="file" accept=".csv" ref={importInputRef} onChange={handleImportFile} className="hidden" />
-          <button onClick={() => onCreateProspect?.(businessTypeFilter)} className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors shadow-sm shadow-orange-500/20 whitespace-nowrap">
+          <button onClick={() => onCreateProspect?.(businessTypeFilter)} disabled={isLoading} className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors shadow-sm shadow-orange-500/20 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-orange-500">
             <Plus size={16} />
             <span>New Prospect</span>
           </button>
@@ -1035,6 +987,66 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
         onConfirm={confirmArchiveRow}
         onClose={() => setPendingArchiveRow(null)}
       />
+      {/* Export flow — a true locking modal (not an inline dropdown): once entered,
+          the rest of the page (filters, row selection, other actions) can't be
+          touched until the user explicitly closes it via Cancel/✕. */}
+      {showExportPanel && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-md overflow-hidden flex flex-col animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-gray-150 px-5 py-3.5 bg-gray-50">
+              <span className="text-xs font-black uppercase text-gray-900 tracking-wider">Export</span>
+              <button
+                type="button"
+                onClick={() => setShowExportPanel(false)}
+                className="p-1 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100"
+                title="Close"
+              >
+                <XCircle size={15} />
+              </button>
+            </div>
+            <div className="p-5">
+              <p className="text-[11px] text-gray-500 mb-2">
+                {selectedProposals.length} of {filteredProposals.length} filtered row(s) selected — check/uncheck rows in List view.
+              </p>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-gray-700">Export Columns</span>
+                <div className="flex gap-2">
+                  <button onClick={() => setSelectedExportFields(new Set(EXPORT_FIELD_DEFS.map(f => f.key)))} className="text-[11px] text-orange-600 hover:text-orange-700 font-medium">All</button>
+                  <button onClick={() => setSelectedExportFields(new Set())} className="text-[11px] text-gray-500 hover:text-gray-700 font-medium">None</button>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1 mb-3 max-h-64 overflow-y-auto border border-gray-100 rounded-lg p-2">
+                {EXPORT_FIELD_DEFS.map(f => (
+                  <label key={f.key} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5">
+                    <input
+                      type="checkbox"
+                      checked={selectedExportFields.has(f.key)}
+                      onChange={() => setSelectedExportFields(prev => {
+                        const next = new Set(prev);
+                        if (next.has(f.key)) next.delete(f.key); else next.add(f.key);
+                        return next;
+                      })}
+                    />
+                    {f.label}
+                  </label>
+                ))}
+              </div>
+              {exportValidationError && (
+                <p className="text-[11px] text-red-600 font-medium mb-2">{exportValidationError}</p>
+              )}
+            </div>
+            <div className="border-t border-gray-150 px-5 py-3 bg-gray-50 flex justify-end gap-2">
+              <button onClick={() => setShowExportPanel(false)} className="px-4 py-1.5 bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 font-bold uppercase text-[9px] rounded-lg">
+                Cancel
+              </button>
+              <button onClick={handleExportCsv} className="flex items-center justify-center gap-1.5 px-4 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-bold uppercase text-[9px] rounded-lg shadow-sm">
+                <Download size={12} />
+                <span>Export {selectedProposals.length} row(s) as CSV</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <Toast message={toast} />
     </div>
   );

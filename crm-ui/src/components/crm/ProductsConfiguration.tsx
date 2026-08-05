@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import * as XLSX from 'xlsx';
+import type { Proposal } from '../../types';
 import { 
   Search, 
   Plus, 
@@ -204,6 +205,19 @@ const INITIAL_DATE_TRANSFER_FIELDS = [
   'Date to Client',
   'eMPF Submission Ref. No.'
 ];
+
+// "Member First Name"/"Member Last Name" were removed from the field catalog above,
+// but a product saved to localStorage from before that change still carries them
+// baked into its own vendorFields/premiumFields/dateTransferFields array — this
+// strips them out of whatever's loaded so they stop rendering regardless of when
+// the product was last saved.
+const REMOVED_FIELD_NAMES = ['Member First Name', 'Member Last Name'];
+const stripRemovedProductFields = (list: any[]): any[] => list.map(p => ({
+  ...p,
+  vendorFields: (p.vendorFields || []).filter((f: any) => !REMOVED_FIELD_NAMES.includes(f.name)),
+  premiumFields: (p.premiumFields || []).filter((f: any) => !REMOVED_FIELD_NAMES.includes(f.name)),
+  dateTransferFields: (p.dateTransferFields || []).filter((f: any) => !REMOVED_FIELD_NAMES.includes(f.name)),
+}));
 
 const INITIAL_GMI_GROUPS_MASTER: GmiProductGroup[] = [
   { id: 'GMI-GRP-001', name: 'CONTRACTOR ALL RISK INSURANCE( CAR )', status: 'Active', createdOn: '2026-06-25 10:00', detailedProducts: [
@@ -586,10 +600,17 @@ export const getConfiguredProducts = (): ProductItem[] => {
   // A corrupted/manually-edited localStorage value shouldn't crash every screen
   // that reads product config (Prospect Pipeline, Opportunity Detail) — fall
   // back to the seed list rather than letting JSON.parse throw uncaught.
-  try { return JSON.parse(saved); } catch (e) { return INITIAL_PRODUCTS; }
+  try { return stripRemovedProductFields(JSON.parse(saved)); } catch (e) { return INITIAL_PRODUCTS; }
 };
 
-export const ProductsConfiguration: React.FC = () => {
+interface ProductsConfigurationProps {
+  // Live Opportunity records, used only to validate that a Restriction Parameters
+  // change doesn't orphan an existing record already sitting on a stage about to
+  // become restricted.
+  proposals: Proposal[];
+}
+
+export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ proposals }) => {
   // ==========================================
   // STATE MANAGEMENT
   // ==========================================
@@ -621,7 +642,7 @@ export const ProductsConfiguration: React.FC = () => {
 
   const [products, setProducts] = useState<ProductItem[]>(() => {
     const saved = localStorage.getItem('pr2_products_list');
-    return saved ? JSON.parse(saved) : INITIAL_PRODUCTS;
+    return saved ? stripRemovedProductFields(JSON.parse(saved)) : INITIAL_PRODUCTS;
   });
 
   const [attachmentDefinitions, setAttachmentDefinitions] = useState<AttachmentDefinition[]>(() => {
@@ -1106,6 +1127,110 @@ export const ProductsConfiguration: React.FC = () => {
 
     if (!selectedProduct) return;
 
+    // Only a NEWLY-restricted stage can orphan an existing record — removing a
+    // restriction never invalidates anything already saved.
+    const newlyRestrictedNB = detailRestrictedStages.filter(s => !(selectedProduct.restrictedStages || []).includes(s));
+    const newlyRestrictedRB = detailRestrictedStagesRB.filter(s => !(selectedProduct.restrictedStagesRB || []).includes(s));
+    if (newlyRestrictedNB.length > 0 || newlyRestrictedRB.length > 0) {
+      const affected = proposals.filter(p =>
+        p.productItem === selectedProduct.name &&
+        (p.businessType === 'Renewal' ? newlyRestrictedRB : newlyRestrictedNB).includes(p.probability)
+      );
+      if (affected.length > 0) {
+        alert(`Cannot save: ${affected.length} record(s) would land on a newly-restricted stage (${affected.map(p => `${p.id}: ${p.probability}%`).join(', ')}). Move them off that stage first.`);
+        return;
+      }
+    }
+
+    // Same idea, but for Document Requirements: the Opportunity page blocks
+    // progressing past the earliest unmet Compulsory attachment (see
+    // getUploadBlockedStages in ProposalDetail.tsx) — so if this save newly
+    // introduces a Compulsory requirement at an earlier stage than before,
+    // any existing record already sitting at/above that stage without the
+    // upload would retroactively become invalid (blocked if it were re-edited).
+    const earliestCompulsoryStage = (requirements: ProductDocumentRequirement[]): number => {
+      const compulsoryStages = requirements
+        .filter(r => attachmentDefinitions.find(a => a.name === r.attachmentName)?.fileType === 'Compulsory')
+        .map(r => r.stage);
+      return compulsoryStages.length > 0 ? Math.min(...compulsoryStages) : Infinity;
+    };
+    const oldEarliestNB = earliestCompulsoryStage(selectedProduct.documentRequirements || []);
+    const newEarliestNB = earliestCompulsoryStage(detailDocumentRequirements);
+    const oldEarliestRB = earliestCompulsoryStage(selectedProduct.documentRequirementsRB || []);
+    const newEarliestRB = earliestCompulsoryStage(detailDocumentRequirementsRB);
+
+    if (newEarliestNB < oldEarliestNB || newEarliestRB < oldEarliestRB) {
+      const isUploadSatisfied = (p: Proposal, stage: number, attachmentName: string) =>
+        (p.productFileRequirements || []).some(f =>
+          f.relatedProductItem === p.productItem && f.checkStage === `${stage}%` && f.name === attachmentName && (f.files?.length || 0) > 0
+        );
+      const affectedDocs = proposals.filter(p => {
+        if (p.productItem !== selectedProduct.name) return false;
+        const isRenewalP = p.businessType === 'Renewal';
+        const newEarliest = isRenewalP ? newEarliestRB : newEarliestNB;
+        const oldEarliest = isRenewalP ? oldEarliestRB : oldEarliestNB;
+        if (newEarliest >= oldEarliest || p.probability < newEarliest) return false;
+        const requirements = isRenewalP ? detailDocumentRequirementsRB : detailDocumentRequirements;
+        return requirements
+          .filter(r => r.stage === newEarliest && attachmentDefinitions.find(a => a.name === r.attachmentName)?.fileType === 'Compulsory')
+          .some(r => !isUploadSatisfied(p, r.stage, r.attachmentName));
+      });
+      if (affectedDocs.length > 0) {
+        alert(`Cannot save: ${affectedDocs.length} record(s) would newly need this upload (${affectedDocs.map(p => `${p.id}: ${p.probability}%`).join(', ')}). Have them upload it, or move the requirement later.`);
+        return;
+      }
+    }
+
+    // Reachability guard: a stage with a Compulsory requirement can only ever be
+    // satisfied by first sitting at some *earlier, non-restricted* stage and
+    // uploading the file ahead of time (see getUploadBlockedStages in
+    // ProposalDetail.tsx — it blocks the compulsory stage itself, not just what
+    // comes after). If every stage before it is Restricted, no Opportunity —
+    // new or existing — could ever reach it to satisfy the requirement at all.
+    //
+    // A stage that is itself already Restricted is skipped entirely here: it's
+    // already permanently off-limits by direct admin choice (a normal, valid
+    // configuration — e.g. deliberately skipping a stage), so its own Compulsory
+    // requirement is moot and shouldn't be flagged as a reachability problem.
+    // (This also covers the case where only one stage is left un-restricted —
+    // if a Compulsory requirement sits on that sole surviving stage, everything
+    // below it is Restricted by definition, so this loop still catches it.)
+    const findUnreachableCompulsoryStage = (
+      requirements: ProductDocumentRequirement[],
+      restrictedForBiz: number[],
+      stagesForBiz: number[]
+    ): number | null => {
+      const compulsoryStages = new Set(
+        requirements
+          .filter(r => attachmentDefinitions.find(a => a.name === r.attachmentName)?.fileType === 'Compulsory')
+          .map(r => r.stage)
+      );
+      for (const stage of compulsoryStages) {
+        if (restrictedForBiz.includes(stage)) continue;
+        const hasUnrestrictedStageBefore = stagesForBiz.some(s => s < stage && !restrictedForBiz.includes(s));
+        if (!hasUnrestrictedStageBefore) return stage;
+      }
+      return null;
+    };
+    const unreachableNB = findUnreachableCompulsoryStage(detailDocumentRequirements, detailRestrictedStages, NB_CONFIG_STAGES);
+    const unreachableRB = findUnreachableCompulsoryStage(detailDocumentRequirementsRB, detailRestrictedStagesRB, RB_CONFIG_STAGES);
+    if (unreachableNB !== null || unreachableRB !== null) {
+      const parts = [
+        unreachableNB !== null ? `New Business ${unreachableNB}%` : null,
+        unreachableRB !== null ? `Renewal ${unreachableRB}%` : null,
+      ].filter(Boolean).join(' and ');
+      alert(`Cannot save: ${parts} needs a Compulsory upload, but every earlier stage is Restricted — it could never be reached. Leave one earlier stage un-restricted.`);
+      return;
+    }
+
+    // Every-stage-restricted guard: if a business type's entire stage list is
+    // Restricted, no Opportunity of that business type could ever be created
+    // or saved against this product at all, regardless of Document Requirements.
+    if (NB_CONFIG_STAGES.every(s => detailRestrictedStages.includes(s)) || RB_CONFIG_STAGES.every(s => detailRestrictedStagesRB.includes(s))) {
+      alert(`Cannot save: every stage is Restricted for at least one business type — no Opportunity could ever be created. Leave at least one stage un-restricted.`);
+      return;
+    }
+
     const timestamp = getSystemDatetimeString();
     const newAuditsList: ProductAuditRecord[] = [];
 
@@ -1213,15 +1338,60 @@ export const ProductsConfiguration: React.FC = () => {
     setAttachmentDefinitions(prev => [...prev, { id: `ATT-${Date.now()}`, name: '', fileType: 'Compulsory' }]);
   };
   const updateAttachmentDefinition = (id: string, patch: Partial<AttachmentDefinition>) => {
+    const target = attachmentDefinitions.find(a => a.id === id);
+    const becomingCompulsory = !!target && target.fileType !== 'Compulsory' && patch.fileType === 'Compulsory';
+    // Flipping an attachment to Compulsory here affects every Product Item that
+    // references it at once, so it needs the same two guards handleSaveAllSettings
+    // applies per-product: reachability (an earlier un-restricted stage must exist
+    // to upload it in) and no existing record retroactively becoming invalid.
+    if (target && becomingCompulsory) {
+      let unreachableIn: string | null = null;
+      const strandedRecords: string[] = [];
+      for (const p of products) {
+        const nbReq = (p.documentRequirements || []).find(r => r.attachmentName === target.name);
+        const rbReq = (p.documentRequirementsRB || []).find(r => r.attachmentName === target.name);
+        // A requirement on a stage that's already Restricted is skipped — that
+        // stage is off-limits outright by design, so its Compulsory requirement
+        // is moot (mirrors the same skip in findUnreachableCompulsoryStage above).
+        if (nbReq && !(p.restrictedStages || []).includes(nbReq.stage)) {
+          const hasEarlierOpenStage = NB_CONFIG_STAGES.some(s => s < nbReq.stage && !(p.restrictedStages || []).includes(s));
+          if (!hasEarlierOpenStage) unreachableIn = `"${p.name}" (New Business ${nbReq.stage}%)`;
+          proposals
+            .filter(prop => prop.productItem === p.name && prop.businessType !== 'Renewal' && prop.probability >= nbReq.stage &&
+              !(prop.productFileRequirements || []).some(f => f.relatedProductItem === p.name && f.checkStage === `${nbReq.stage}%` && f.name === target.name && (f.files?.length || 0) > 0))
+            .forEach(prop => strandedRecords.push(`${prop.id}: ${prop.probability}%`));
+        }
+        if (rbReq && !(p.restrictedStagesRB || []).includes(rbReq.stage)) {
+          const hasEarlierOpenStage = RB_CONFIG_STAGES.some(s => s < rbReq.stage && !(p.restrictedStagesRB || []).includes(s));
+          if (!hasEarlierOpenStage) unreachableIn = `"${p.name}" (Renewal ${rbReq.stage}%)`;
+          proposals
+            .filter(prop => prop.productItem === p.name && prop.businessType === 'Renewal' && prop.probability >= rbReq.stage &&
+              !(prop.productFileRequirements || []).some(f => f.relatedProductItem === p.name && f.checkStage === `${rbReq.stage}%` && f.name === target.name && (f.files?.length || 0) > 0))
+            .forEach(prop => strandedRecords.push(`${prop.id}: ${prop.probability}%`));
+        }
+      }
+      if (unreachableIn) {
+        alert(`Cannot mark "${target.name}" as Compulsory: ${unreachableIn} has no earlier un-restricted stage to upload it in.`);
+        return;
+      }
+      if (strandedRecords.length > 0) {
+        alert(`Cannot mark "${target.name}" as Compulsory: ${strandedRecords.length} record(s) would newly need this upload (${strandedRecords.join(', ')}).`);
+        return;
+      }
+    }
     setAttachmentDefinitions(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a));
   };
   const removeAttachmentDefinition = (id: string) => {
     const target = attachmentDefinitions.find(a => a.id === id);
-    const inUse = !!target && products.some(p =>
+    const productsUsingAttachment = target ? products.filter(p =>
       (p.documentRequirements || []).some(r => r.attachmentName === target.name) ||
       (p.documentRequirementsRB || []).some(r => r.attachmentName === target.name)
-    );
-    if (inUse && !confirm('This attachment is referenced by one or more Product Item Document Requirements. Delete it anyway?')) return;
+    ) : [];
+    if (productsUsingAttachment.length > 0) {
+      alert(`Cannot delete "${target!.name}" — it is currently referenced by ${productsUsingAttachment.length} Product Item's Document Requirements (${productsUsingAttachment.map(p => p.name).join(', ')}). Remove it from those Document Requirements first.`);
+      return;
+    }
+    if (!confirm(`Are you sure you want to delete "${target?.name}"?`)) return;
     setAttachmentDefinitions(prev => prev.filter(a => a.id !== id));
   };
 
@@ -2798,13 +2968,15 @@ export const ProductsConfiguration: React.FC = () => {
                             onClick={() => setActiveRestrictedStages(prev =>
                               isRestricted ? prev.filter(s => s !== stage) : [...prev, stage]
                             )}
-                            className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-all ${
+                            title={isRestricted ? `${stage}% is restricted — click to allow it again` : `${stage}% is allowed — click to restrict it`}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-all flex items-center gap-1.5 ${
                               isRestricted
                                 ? 'bg-red-50 border-red-300 text-red-600'
                                 : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
                             }`}
                           >
                             {stage}%
+                            {isRestricted && <span className="text-[9px] font-black uppercase tracking-wide">Restricted</span>}
                           </button>
                         );
                       })}
