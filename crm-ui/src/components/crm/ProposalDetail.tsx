@@ -603,6 +603,19 @@ const CONFIG_PRODUCTS = CONFIG_PRODUCT_NAMES.map(name => ({
   gmiProductGroup: resolveFallbackGmiProductGroup(name)
 }));
 
+// Same rules as the Pipeline board's column derivation (getOpptyStageColumn /
+// isPastEffectiveDate in ProposalPipeline.tsx) — reused here so the read-only
+// Opportunity Status shown on this page never disagrees with the board.
+// `stage`/`probability` are independent fields: 0% probability alone does not
+// mean Lost — only an explicit stage of 'Lost' does.
+const isPastEffectiveDate = (p: Proposal) => !!p.effectiveDate && new Date(p.effectiveDate) < new Date();
+const getOpptyStatusLabel = (p: Proposal): string => {
+  if (p.stage === 'Lost') return 'Lost';
+  if (p.probability !== 100 && isPastEffectiveDate(p)) return 'Expired';
+  if (p.probability === 100) return 'Won';
+  return `${p.probability}%`;
+};
+
 export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allProposals, onBack, onSave, onNavigateToProspect, onDelete, currentRole = 'Sales Rep', onDirtyStateChange, isNew = false, onTagRenamed, onTagDeleted }) => {
 
   // Helper: is this product configured (Product Configuration module) as
@@ -684,10 +697,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     // is always a real, valid value — no `|| 30` fallback needed (that would
     // incorrectly reset an existing 0% Lost record back to 30 on every edit).
     probability: proposal.probability,
-    // Effective Date, captured per stage: Date 1 shown Draft/Finalize/Policy, Date 2 shown Finalize/Policy, Date 3 shown Policy only
     effectiveDate1: isNew ? '' : (proposal.effectiveDate || '2026-05-01'),
-    effectiveDate2: proposal.effectiveDate2 || '',
-    effectiveDate3: proposal.effectiveDate3 || '',
     // Customer Info
     company: isNew ? '' : (proposal.client || 'DEMO COMPANY CO. LTD.'),
     masterType: proposal.masterType || resolveCompanyMeta(proposal.client || 'DEMO COMPANY CO. LTD.').masterType,
@@ -1361,8 +1371,6 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
 
     const invalidDateFields: string[] = [];
     if (!isValidEffectiveDateYear(editedOpportunity.effectiveDate1)) invalidDateFields.push('Effective Date');
-    if (editedOpportunity.effectiveDate2 && !isValidEffectiveDateYear(editedOpportunity.effectiveDate2)) invalidDateFields.push('Effective Date 2 (Finalize)');
-    if (editedOpportunity.effectiveDate3 && !isValidEffectiveDateYear(editedOpportunity.effectiveDate3)) invalidDateFields.push('Effective Date 3 (Policy)');
     if (invalidDateFields.length > 0) {
       setValidationError(`Please enter a valid year (1900–2100) for: ${invalidDateFields.join(', ')}.`);
       return;
@@ -1410,8 +1418,6 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       probability: editedOpportunity.probability,
       lastUpdated: new Date().toISOString().slice(0, 10),
       effectiveDate: editedOpportunity.effectiveDate1,
-      effectiveDate2: editedOpportunity.effectiveDate2 || undefined,
-      effectiveDate3: editedOpportunity.effectiveDate3 || undefined,
       campaign: editedOpportunity.campaign,
       expectedRevenueGross: grossAmount,
       salesRep: editedOpportunity.salesRep1,
@@ -1448,8 +1454,6 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       ['Oppty Name', editedOpportunity.name, updatedProposal.name],
       ['Probability', editedOpportunity.probability, updatedProposal.probability],
       ['Effective Date', editedOpportunity.effectiveDate1, updatedProposal.effectiveDate],
-      ['Effective Date 2', editedOpportunity.effectiveDate2 || undefined, updatedProposal.effectiveDate2],
-      ['Effective Date 3', editedOpportunity.effectiveDate3 || undefined, updatedProposal.effectiveDate3],
       ['Campaign', editedOpportunity.campaign, updatedProposal.campaign],
       ['Company / Individual', editedOpportunity.company, updatedProposal.client],
       ['Sales Rep 1', editedOpportunity.salesRep1, updatedProposal.salesRep],
@@ -1751,7 +1755,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
                   <div>
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Opportunity Status</label>
-                    <span className="text-xs font-semibold text-gray-700">{proposal.status === 'Archived' ? 'Archived' : 'Active'}</span>
+                    <span className="text-xs font-semibold text-gray-700">{getOpptyStatusLabel(proposal)}</span>
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Opportunity Code</label>
@@ -1852,16 +1856,6 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                   {['Draft', 'Finalize', 'Policy'].includes(editedOpportunity.stage) && (
                     <FieldView label="Effective Date" editing={isEditMode} viewValue={editedOpportunity.effectiveDate1 || '—'}>
                       <input type="date" min="1900-01-01" max="2100-12-31" value={editedOpportunity.effectiveDate1} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate1: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
-                    </FieldView>
-                  )}
-                  {['Finalize', 'Policy'].includes(editedOpportunity.stage) && (
-                    <FieldView label="Effective Date 2 (Finalize)" editing={isEditMode} viewValue={editedOpportunity.effectiveDate2 || '—'}>
-                      <input type="date" min="1900-01-01" max="2100-12-31" value={editedOpportunity.effectiveDate2} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate2: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
-                    </FieldView>
-                  )}
-                  {editedOpportunity.stage === 'Policy' && (
-                    <FieldView label="Effective Date 3 (Policy)" editing={isEditMode} viewValue={editedOpportunity.effectiveDate3 || '—'}>
-                      <input type="date" min="1900-01-01" max="2100-12-31" value={editedOpportunity.effectiveDate3} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate3: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
                     </FieldView>
                   )}
                   <div className="md:col-span-3">
