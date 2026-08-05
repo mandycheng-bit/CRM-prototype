@@ -6,8 +6,10 @@ import ProposalPipelineGmi from './components/crm/ProposalPipelineGmi';
 import ProposalDetailGmi from './components/crm/ProposalDetailGmi';
 import ProductsConfiguration from './components/crm/ProductsConfiguration';
 import OpportunityConfiguration from './components/crm/OpportunityConfiguration';
+import { CustomerCreationSim } from './components/crm/CustomerCreationSim';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ConfirmDialog } from './components/ConfirmDialog';
+import { Toast, useToast } from './components/Toast';
 import { MOCK_PROPOSALS } from './constants';
 import type { Proposal } from './types';
 import { useRef, useState } from 'react';
@@ -55,6 +57,11 @@ export default function App() {
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
   const [isNewProspect, setIsNewProspect] = useState(false);
   const [pipelineBusinessType, setPipelineBusinessType] = useState<'NB' | 'Renewal'>('NB');
+  // Set when a Prospect(2026) Opportunity's "Convert to Customer" button is
+  // clicked (after the unsaved-changes guard) — swaps the page for the
+  // simulated Customer Creation page, prefilled from this Proposal.
+  const [convertingProposal, setConvertingProposal] = useState<Proposal | null>(null);
+  const { toast, showToast } = useToast();
   // Demo-only role switcher — this prototype has no real auth/permission system;
   // this lets a PM demo the "only Admin can delete a 100% Opportunity" rule.
   const [currentRole, setCurrentRole] = useState<'Sales Rep' | 'Admin'>('Sales Rep');
@@ -63,6 +70,22 @@ export default function App() {
   const hasUnsavedOpportunityChangesRef = useRef(false);
 
   const renderModule = () => {
+    if (activeModule === 'perspective-pipeline' && convertingProposal) {
+      return (
+        <ErrorBoundary moduleLabel="Create Customer" onReset={() => setConvertingProposal(null)}>
+          <CustomerCreationSim
+            proposal={convertingProposal}
+            onBack={() => setConvertingProposal(null)}
+            onConfirm={(updated) => {
+              setProposals(prev => prev.map(p => p.id === updated.id ? updated : p));
+              setSelectedProposal(updated);
+              setConvertingProposal(null);
+              showToast(`"${updated.client}" created as a Customer.`);
+            }}
+          />
+        </ErrorBoundary>
+      );
+    }
     if (activeModule === 'perspective-pipeline' && selectedProposal) {
       return (
         <ErrorBoundary moduleLabel="Opportunity Detail" onReset={() => setSelectedProposal(null)} key={selectedProposal.id}>
@@ -93,6 +116,7 @@ export default function App() {
               ...p,
               tags: (p.tags || []).filter(t => t !== name),
             })))}
+            onConvertToCustomer={(p) => setConvertingProposal(p)}
           />
         </ErrorBoundary>
       );
@@ -233,6 +257,7 @@ export default function App() {
         onConfirm={confirmModuleChange}
         onClose={() => setPendingModuleChange(null)}
       />
+      <Toast message={toast} />
     </div>
   );
 }

@@ -36,7 +36,7 @@ const COMPANY_INDIVIDUAL_OPTIONS: { id: string; label: string; entityType: 'Comp
   ...MOCK_INDIVIDUALS.filter(i => i.status !== 'Archived').map(i => ({ id: i.id, label: i.fullName, entityType: 'Individual' as const, source: 'Customer' as const, masterType: (i.status === 'Lapsed' ? 'Lapsed Customer' : 'Customer') as MasterType })),
   ...MOCK_LEADS.filter(l => (l.leadStatus as string) !== 'Archived').map(l => ({ id: l.id, label: l.leadName, entityType: l.type, source: 'Lead' as const, masterType: 'Lead' as MasterType })),
 ];
-const resolveCompanyMeta = (label: string) => {
+export const resolveCompanyMeta = (label: string) => {
   const match = COMPANY_INDIVIDUAL_OPTIONS.find(o => o.label === label);
   return match
     ? { entityType: match.entityType, source: match.source, masterType: match.masterType }
@@ -290,6 +290,10 @@ interface ProposalDetailProps {
   // ProductsConfiguration.tsx, rather than only fixing up the record open here.
   onTagRenamed?: (oldName: string, newName: string) => void;
   onTagDeleted?: (name: string) => void;
+  // Fired once the user confirms leaving this page (see guardedNavigate) —
+  // App.tsx swaps this page out for the simulated Customer Creation page,
+  // prefilled from this Proposal.
+  onConvertToCustomer?: (proposal: Proposal) => void;
 }
 
 // Master lists for resolution inside Proposal
@@ -616,7 +620,7 @@ const getOpptyStatusLabel = (p: Proposal): string => {
   return `${p.probability}%`;
 };
 
-export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allProposals, onBack, onSave, onNavigateToProspect, onDelete, currentRole = 'Sales Rep', onDirtyStateChange, isNew = false, onTagRenamed, onTagDeleted }) => {
+export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allProposals, onBack, onSave, onNavigateToProspect, onDelete, currentRole = 'Sales Rep', onDirtyStateChange, isNew = false, onTagRenamed, onTagDeleted, onConvertToCustomer }) => {
 
   // Helper: is this product configured (Product Configuration module) as
   // "Applied to Individual" + "Is Insurance Product" = No — the one carve-out
@@ -1517,12 +1521,10 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
 
   // Manual conversion for a Lead that reached 100% probability (already saved) on a
   // product NOT covered by the auto-convert rule (Applied to Individual + non-insurance).
-  // No standalone Customer record page exists in this prototype, so the conversion is
-  // reflected inline and committed immediately — it's its own lifecycle action, not a draft edit.
-  const handleConvertLeadToCustomer = () => {
-    onSave?.({ ...proposal, masterType: 'Customer' });
-    setEditedOpportunity(prev => ({ ...prev, masterType: 'Customer' }));
-    showToast(`"${proposal.client}" converted to Customer.`);
+  // Routed through guardedNavigate so an in-progress unsaved edit isn't silently
+  // discarded — same "Leave without saving?" guard as onBack/onNavigateToProspect.
+  const handleConvertToCustomerClick = () => {
+    guardedNavigate(() => onConvertToCustomer?.(proposal));
   };
 
   // Product File Requirements — entirely config-driven (Product Configuration module's
@@ -1831,7 +1833,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                     {proposal.probability === 100 && proposal.masterType === 'Lead' && (
                       <div className="mt-2">
                         <button
-                          onClick={handleConvertLeadToCustomer}
+                          onClick={handleConvertToCustomerClick}
                           className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5"
                         >
                           <CheckCircle2 size={13} />
