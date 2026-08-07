@@ -700,7 +700,9 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     // probability (10% NB / 75% RB — see App.tsx's buildBlankProposal), so this
     // is always a real, valid value — no `|| 30` fallback needed (that would
     // incorrectly reset an existing 0% Lost record back to 30 on every edit).
-    probability: proposal.probability,
+    // Typed to allow '' — switching Product Item mid-edit can invalidate the
+    // current value, which is then cleared to '' rather than left stale.
+    probability: proposal.probability as number | '',
     effectiveDate1: isNew ? '' : (proposal.effectiveDate || '2026-05-01'),
     // Customer Info
     company: isNew ? '' : (proposal.client || 'DEMO COMPANY CO. LTD.'),
@@ -1313,7 +1315,10 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   // No formula engine exists yet for the per-product "Formula 1/2/3/4" rules, so this
   // mirrors the proposal's base revenue figure rather than fabricating a calculation.
   const grossAmount = proposal.expectedRevenueGross || 0;
-  const netAmount = Math.round(grossAmount * (editedOpportunity.probability / 100));
+  // Probability is briefly '' while awaiting reselection after a Product Item
+  // switch invalidated it (see the Probability dropdown below) — treat that
+  // as 0 here rather than letting it flow into arithmetic as a string.
+  const netAmount = Math.round(grossAmount * ((typeof editedOpportunity.probability === 'number' ? editedOpportunity.probability : 0) / 100));
 
   // Listen to any external changes to localStorage for product list
   useEffect(() => {
@@ -1362,7 +1367,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   const handleSaveOpportunity = () => {
     const missingFields: string[] = [];
     if (!editedOpportunity.name.trim()) missingFields.push('Oppty Name');
-    if (editedOpportunity.probability === undefined || editedOpportunity.probability === null || Number.isNaN(editedOpportunity.probability)) missingFields.push('Probability');
+    if (typeof editedOpportunity.probability !== 'number' || Number.isNaN(editedOpportunity.probability)) missingFields.push('Probability');
     else if (isNew && editedOpportunity.probability === 0) missingFields.push('Probability');
     if (!editedOpportunity.company.trim()) missingFields.push('Company / Individual');
     if (!editedOpportunity.campaign.trim()) missingFields.push('Campaign');
@@ -1372,6 +1377,10 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       setValidationError(`Please fill in the following required field(s): ${missingFields.join(', ')}.`);
       return;
     }
+    // The missingFields check above already guarantees a real number by this
+    // point — this local gives the rest of save a plain `number` to work with
+    // instead of the draft's `number | ''` (blank while awaiting reselection).
+    const currentProbability = editedOpportunity.probability as number;
 
     const invalidDateFields: string[] = [];
     if (!isValidEffectiveDateYear(editedOpportunity.effectiveDate1)) invalidDateFields.push('Effective Date');
@@ -1395,12 +1404,12 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     const isRenewalForSave = editedOpportunity.businessType === 'Renewal';
     const restrictedForSave = getRestrictedStages(editedOpportunity.productItem, isRenewalForSave);
     const uploadBlockedForSave = getUploadBlockedStages(editedOpportunity.productItem, isRenewalForSave, editedOpportunity.productFileRequirements);
-    if (restrictedForSave.includes(editedOpportunity.probability)) {
-      setValidationError(`${editedOpportunity.probability}% is a restricted stage for "${editedOpportunity.productItem}" (see Product Configuration). Please choose a different Probability.`);
+    if (restrictedForSave.includes(currentProbability)) {
+      setValidationError(`${currentProbability}% is a restricted stage for "${editedOpportunity.productItem}" (see Product Configuration). Please choose a different Probability.`);
       return;
     }
-    if (uploadBlockedForSave.includes(editedOpportunity.probability)) {
-      setValidationError(`"${editedOpportunity.productItem}" has a required document upload outstanding at an earlier stage. Please upload it (see Product File Requirements below) before saving at ${editedOpportunity.probability}%.`);
+    if (uploadBlockedForSave.includes(currentProbability)) {
+      setValidationError(`"${editedOpportunity.productItem}" has a required document upload outstanding at an earlier stage. Please upload it (see Product File Requirements below) before saving at ${currentProbability}%.`);
       return;
     }
     setValidationError(null);
@@ -1408,7 +1417,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     // Master Type conversion is only committed once a 100% probability is actually
     // saved — not while the value is still being edited in the draft.
     let savedMasterType = editedOpportunity.masterType;
-    if (editedOpportunity.probability === 100) {
+    if (currentProbability === 100) {
       if (editedOpportunity.masterType === 'Lapsed Customer') {
         savedMasterType = 'Customer';
       } else if (editedOpportunity.masterType === 'Lead' && isNonInsuranceIndividualProduct(editedOpportunity.productItem)) {
@@ -1419,7 +1428,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       ...proposal,
       name: editedOpportunity.name,
       stage: editedOpportunity.stage as any,
-      probability: editedOpportunity.probability,
+      probability: currentProbability,
       lastUpdated: new Date().toISOString().slice(0, 10),
       effectiveDate: editedOpportunity.effectiveDate1,
       campaign: editedOpportunity.campaign,
@@ -1456,7 +1465,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     // instead of the edit just vanishing.
     const editableFieldChecks: [string, unknown, unknown][] = [
       ['Oppty Name', editedOpportunity.name, updatedProposal.name],
-      ['Probability', editedOpportunity.probability, updatedProposal.probability],
+      ['Probability', currentProbability, updatedProposal.probability],
       ['Effective Date', editedOpportunity.effectiveDate1, updatedProposal.effectiveDate],
       ['Campaign', editedOpportunity.campaign, updatedProposal.campaign],
       ['Company / Individual', editedOpportunity.company, updatedProposal.client],
@@ -1711,7 +1720,11 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                   <div>
                     <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Probability <span className="text-red-500">*</span></label>
                     {isEditMode ? (
-                      <select value={editedOpportunity.probability} onChange={e => setEditedOpportunity({...editedOpportunity, probability: Number(e.target.value)})} className="text-2xl font-black text-gray-900 bg-transparent border-b-2 border-orange-300 focus:border-orange-500 outline-none">
+                      <select
+                        value={editedOpportunity.probability}
+                        onChange={e => setEditedOpportunity({...editedOpportunity, probability: e.target.value === '' ? '' : Number(e.target.value)})}
+                        className="text-2xl font-black text-gray-900 bg-transparent border-b-2 border-orange-300 focus:border-orange-500 outline-none"
+                      >
                         {(() => {
                           const isRenewal = editedOpportunity.businessType === 'Renewal';
                           const restricted = getRestrictedStages(editedOpportunity.productItem, isRenewal);
@@ -1724,8 +1737,12 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                             .filter(p => !restricted.includes(p) && !uploadBlocked.includes(p));
                           return (
                             <>
-                              {!options.includes(editedOpportunity.probability) && (
-                                <option value={editedOpportunity.probability}>{editedOpportunity.probability}% (invalid for {editedOpportunity.businessType === 'Renewal' ? 'RB' : 'NB'})</option>
+                              {/* Blank while awaiting reselection after a Product Item switch
+                                  invalidated the prior value — see the onSelect handler above.
+                                  The list below only ever contains valid stages, so there is
+                                  nothing else to flag as invalid here. */}
+                              {editedOpportunity.probability === '' && (
+                                <option value="">Please select</option>
                               )}
                               {options.map(p => (
                                 <option key={p} value={p}>{p}%</option>
@@ -1735,7 +1752,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                         })()}
                       </select>
                     ) : (
-                      <span className="text-3xl font-black text-gray-900">{editedOpportunity.probability}%</span>
+                      <span className="text-3xl font-black text-gray-900">{editedOpportunity.probability === '' ? '—' : `${editedOpportunity.probability}%`}</span>
                     )}
                   </div>
                 </div>
@@ -1955,12 +1972,27 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                     className="max-w-sm"
                     value={editedOpportunity.productItem}
                     options={CONFIG_PRODUCT_NAMES.map(name => ({ id: name, label: name, value: name }))}
-                    onSelect={selectedItem => setEditedOpportunity({
-                      ...editedOpportunity,
-                      productItem: selectedItem,
-                      productTeam: resolveProductTeam(selectedItem),
-                      productCategory: resolveProductCategory(selectedItem)
-                    })}
+                    onSelect={selectedItem => {
+                      // Switching Product Item can invalidate the draft's current
+                      // Probability (Restriction Parameters / Document Requirements
+                      // differ per product) — clear it rather than leave a stale
+                      // value sitting there; the Rep must actively reselect (see
+                      // the Probability dropdown below, which only ever lists valid
+                      // stages once this fires).
+                      const isRenewal = editedOpportunity.businessType === 'Renewal';
+                      const restricted = getRestrictedStages(selectedItem, isRenewal);
+                      const uploadBlocked = getUploadBlockedStages(selectedItem, isRenewal, editedOpportunity.productFileRequirements);
+                      const stillValid = typeof editedOpportunity.probability === 'number'
+                        && !restricted.includes(editedOpportunity.probability)
+                        && !uploadBlocked.includes(editedOpportunity.probability);
+                      setEditedOpportunity({
+                        ...editedOpportunity,
+                        productItem: selectedItem,
+                        productTeam: resolveProductTeam(selectedItem),
+                        productCategory: resolveProductCategory(selectedItem),
+                        probability: stillValid ? editedOpportunity.probability : '',
+                      });
+                    }}
                     placeholder="Search product item..."
                     buttonPlaceholder="Please Select Product Item"
                   />
