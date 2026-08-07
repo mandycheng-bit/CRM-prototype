@@ -180,7 +180,7 @@ export default function App() {
       );
     }
     if (activeModule === 'opportunity-config') {
-      return <OpportunityConfiguration />;
+      return <OpportunityConfiguration proposals={proposals} />;
     }
     return <ProductsConfiguration proposals={proposals} />;
   };

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Pencil, Trash2, Plus, XCircle } from 'lucide-react';
 import { INITIAL_MPF_SCHEMES, INITIAL_EMPLOYER_OPTIONS } from '../../constants';
 import type { EmployerOptionConfig } from '../../constants';
+import type { Proposal } from '../../types';
 
 type ConfigTab = 'mpf-scheme' | 'employer-option';
 
@@ -15,7 +16,38 @@ const formatDecimal2 = (raw: string | number) => {
   return isNaN(num) ? '' : num.toFixed(2);
 };
 
-export default function OpportunityConfiguration() {
+// Opportunity Product Opportunity Evaluation fields that look up MPF Scheme —
+// must match ProposalDetail.tsx's EVAL_FIELD_SPECS entries typed 'mpf-lookup'.
+const MPF_SCHEME_LOOKUP_FIELDS = ['Existing Scheme 1', 'Existing Scheme 2', 'Existing Scheme 3', 'Existing Scheme 4', 'Existing Scheme 5', 'New Scheme'];
+
+// Each Opportunity's evaluation field values live in their own localStorage
+// entry (see ProposalDetail.tsx's `pr2_opp_eval_${proposal.id}`), not a single
+// shared collection — so checking "is this in use" means scanning every
+// Opportunity's own entry individually rather than one combined list.
+const readOpportunityEvalValues = (proposalId: string): Record<string, string> => {
+  try {
+    const saved = localStorage.getItem(`pr2_opp_eval_${proposalId}`);
+    return saved ? JSON.parse(saved) : {};
+  } catch {
+    return {};
+  }
+};
+
+const findOpportunitiesUsingMpfScheme = (proposals: Proposal[], schemeName: string): string[] =>
+  proposals
+    .filter(p => MPF_SCHEME_LOOKUP_FIELDS.some(field => readOpportunityEvalValues(p.id)[field] === schemeName))
+    .map(p => p.id);
+
+const findOpportunitiesUsingEmployerOption = (proposals: Proposal[], employerName: string): string[] =>
+  proposals
+    .filter(p => readOpportunityEvalValues(p.id)['Employer Option'] === employerName)
+    .map(p => p.id);
+
+interface OpportunityConfigurationProps {
+  proposals: Proposal[];
+}
+
+export default function OpportunityConfiguration({ proposals }: OpportunityConfigurationProps) {
   const [activeTab, setActiveTab] = useState<ConfigTab>('mpf-scheme');
 
   // MPF Scheme master list (shared with the Prospect's Product Opportunity Evaluation
@@ -53,6 +85,11 @@ export default function OpportunityConfiguration() {
 
   const handleDelete = (value: string) => {
     if (mpfSchemes.length <= 1) { alert('At least one MPF Scheme must exist.'); return; }
+    const usedBy = findOpportunitiesUsingMpfScheme(proposals, value);
+    if (usedBy.length > 0) {
+      alert(`Cannot delete "${value}" — it is currently referenced by ${usedBy.length} Opportunity record(s) (${usedBy.join(', ')}). Update those Opportunities first.`);
+      return;
+    }
     if (confirm(`Are you sure you want to delete "${value}"?`)) {
       setMpfSchemes(mpfSchemes.filter(i => i !== value));
     }
@@ -104,6 +141,11 @@ export default function OpportunityConfiguration() {
 
   const handleEmployerDelete = (name: string) => {
     if (employerOptions.length <= 1) { alert('At least one Employer Option must exist.'); return; }
+    const usedBy = findOpportunitiesUsingEmployerOption(proposals, name);
+    if (usedBy.length > 0) {
+      alert(`Cannot delete "${name}" — it is currently referenced by ${usedBy.length} Opportunity record(s) (${usedBy.join(', ')}). Update those Opportunities first.`);
+      return;
+    }
     if (confirm(`Are you sure you want to delete "${name}"?`)) {
       setEmployerOptions(employerOptions.filter(e => e.name !== name));
     }

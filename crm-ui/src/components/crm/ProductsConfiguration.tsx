@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import type { Proposal } from '../../types';
 import { 
@@ -74,6 +74,10 @@ export interface ProductDocumentRequirement {
 // sets include a 100% stage that must not be conflated.
 export const NB_CONFIG_STAGES = [10, 30, 70, 90, 100];
 export const RB_CONFIG_STAGES = [65, 75, 85, 95, 100];
+
+// Attachment Definitions aren't owned by any one Product Item, so their audit
+// entries record against this general ledger label rather than a product name.
+const ATTACHMENT_LEDGER_LABEL = '(Global — Attachment Management)';
 
 export interface ProductAuditRecord {
   id: string;
@@ -649,6 +653,10 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
     const saved = localStorage.getItem('pr2_attachment_definitions');
     return saved ? JSON.parse(saved) : [];
   });
+  // Attachment Name is a per-keystroke controlled input (see updateAttachmentDefinition) —
+  // logging an audit entry on every keystroke would flood the ledger, so the name actually
+  // audited is captured on focus here and compared on blur instead.
+  const attachmentNameOnFocusRef = useRef<Record<string, string>>({});
 
   const [productAudits, setProductAudits] = useState<ProductAuditRecord[]>(() => {
     const saved = localStorage.getItem('pr2_product_audits');
@@ -1299,6 +1307,72 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
       });
     }
 
+    // Restriction Parameters / Document Requirements — order-independent
+    // comparisons, since toggling stages or re-adding a requirement row
+    // shouldn't itself register as a change if the resulting sets match.
+    const stagesEqual = (a: number[], b: number[]) => {
+      const sa = [...a].sort((x, y) => x - y);
+      const sb = [...b].sort((x, y) => x - y);
+      return sa.length === sb.length && sa.every((v, i) => v === sb[i]);
+    };
+    const formatStages = (stages: number[]) => '[' + [...stages].sort((a, b) => a - b).map(s => `${s}%`).join(', ') + ']';
+    const docReqsEqual = (a: ProductDocumentRequirement[], b: ProductDocumentRequirement[]) => {
+      const norm = (arr: ProductDocumentRequirement[]) => arr.map(r => `${r.stage}:${r.attachmentName}`).sort();
+      const na = norm(a), nb = norm(b);
+      return na.length === nb.length && na.every((v, i) => v === nb[i]);
+    };
+    const formatDocReqs = (reqs: ProductDocumentRequirement[]) =>
+      reqs.length === 0 ? '(none)' : [...reqs].sort((a, b) => a.stage - b.stage).map(r => `${r.stage}%: ${r.attachmentName || '(unset)'}`).join(', ');
+
+    if (!stagesEqual(selectedProduct.restrictedStages || [], detailRestrictedStages)) {
+      newAuditsList.push({
+        id: `AUD-P-${Date.now()}-6`,
+        eventType: 'Configuration Change',
+        changedField: 'Restriction Parameters (NB)',
+        oldValue: formatStages(selectedProduct.restrictedStages || []),
+        newValue: formatStages(detailRestrictedStages),
+        changedBy: 'System Admin',
+        changedOn: timestamp,
+        productName: detailName.trim()
+      });
+    }
+    if (!stagesEqual(selectedProduct.restrictedStagesRB || [], detailRestrictedStagesRB)) {
+      newAuditsList.push({
+        id: `AUD-P-${Date.now()}-7`,
+        eventType: 'Configuration Change',
+        changedField: 'Restriction Parameters (RB)',
+        oldValue: formatStages(selectedProduct.restrictedStagesRB || []),
+        newValue: formatStages(detailRestrictedStagesRB),
+        changedBy: 'System Admin',
+        changedOn: timestamp,
+        productName: detailName.trim()
+      });
+    }
+    if (!docReqsEqual(selectedProduct.documentRequirements || [], detailDocumentRequirements)) {
+      newAuditsList.push({
+        id: `AUD-P-${Date.now()}-8`,
+        eventType: 'Configuration Change',
+        changedField: 'Document Requirements (NB)',
+        oldValue: formatDocReqs(selectedProduct.documentRequirements || []),
+        newValue: formatDocReqs(detailDocumentRequirements),
+        changedBy: 'System Admin',
+        changedOn: timestamp,
+        productName: detailName.trim()
+      });
+    }
+    if (!docReqsEqual(selectedProduct.documentRequirementsRB || [], detailDocumentRequirementsRB)) {
+      newAuditsList.push({
+        id: `AUD-P-${Date.now()}-9`,
+        eventType: 'Configuration Change',
+        changedField: 'Document Requirements (RB)',
+        oldValue: formatDocReqs(selectedProduct.documentRequirementsRB || []),
+        newValue: formatDocReqs(detailDocumentRequirementsRB),
+        changedBy: 'System Admin',
+        changedOn: timestamp,
+        productName: detailName.trim()
+      });
+    }
+
     if (newAuditsList.length > 0) {
       setProductAudits(prev => [...newAuditsList, ...prev]);
     }
@@ -1337,6 +1411,23 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
   const addAttachmentDefinition = () => {
     setAttachmentDefinitions(prev => [...prev, { id: `ATT-${Date.now()}`, name: '', fileType: 'Compulsory' }]);
   };
+  // Manage Attachments can be opened while the currently-open Product Item's
+  // detail page has unsaved Restriction Parameters / Document Requirements
+  // changes (it's launched from within that page). Its guards need to see
+  // that live draft, not just what was last committed via "Save
+  // Configuration" — otherwise a flip/delete can be wrongly allowed (or
+  // wrongly blocked) against a stale snapshot, only to disagree with
+  // handleSaveAllSettings's own guards moments later when the draft is saved.
+  const getProductsWithOpenDraft = (): ProductItem[] => {
+    if (isCreatingNew || viewMode !== 'detail' || !selectedProduct) return products;
+    return products.map(p => p.id === selectedProduct.id ? {
+      ...p,
+      restrictedStages: detailRestrictedStages,
+      documentRequirements: detailDocumentRequirements,
+      restrictedStagesRB: detailRestrictedStagesRB,
+      documentRequirementsRB: detailDocumentRequirementsRB,
+    } : p);
+  };
   const updateAttachmentDefinition = (id: string, patch: Partial<AttachmentDefinition>) => {
     const target = attachmentDefinitions.find(a => a.id === id);
     const becomingCompulsory = !!target && target.fileType !== 'Compulsory' && patch.fileType === 'Compulsory';
@@ -1347,7 +1438,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
     if (target && becomingCompulsory) {
       let unreachableIn: string | null = null;
       const strandedRecords: string[] = [];
-      for (const p of products) {
+      for (const p of getProductsWithOpenDraft()) {
         const nbReq = (p.documentRequirements || []).find(r => r.attachmentName === target.name);
         const rbReq = (p.documentRequirementsRB || []).find(r => r.attachmentName === target.name);
         // A requirement on a stage that's already Restricted is skipped — that
@@ -1379,11 +1470,47 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
         return;
       }
     }
+    // File Type changes are a discrete dropdown selection (unlike the Name
+    // input's per-keystroke onChange — see the onBlur-driven audit for that),
+    // so it's safe to log immediately here without flooding the ledger.
+    if (target && patch.fileType !== undefined && patch.fileType !== target.fileType) {
+      setProductAudits(prev => [{
+        id: `AUD-ATT-${Date.now()}`,
+        eventType: 'Configuration Change',
+        changedField: 'Attachment Definition File Type',
+        oldValue: target.fileType,
+        newValue: patch.fileType!,
+        changedBy: 'System Admin',
+        changedOn: getSystemDatetimeString(),
+        productName: ATTACHMENT_LEDGER_LABEL
+      }, ...prev]);
+    }
     setAttachmentDefinitions(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a));
+  };
+  // Wired to the Attachment Name input's onFocus (captures the pre-edit value)
+  // and onBlur (compares against the value at commit time) — see the ref above.
+  const captureAttachmentNameOnFocus = (id: string, currentName: string) => {
+    attachmentNameOnFocusRef.current[id] = currentName;
+  };
+  const commitAttachmentNameAudit = (id: string, currentName: string) => {
+    const before = attachmentNameOnFocusRef.current[id];
+    delete attachmentNameOnFocusRef.current[id];
+    if (before === undefined || before === currentName) return;
+    const wasBlank = before.trim() === '';
+    setProductAudits(prev => [{
+      id: `AUD-ATT-${Date.now()}`,
+      eventType: 'Configuration Change',
+      changedField: wasBlank ? 'Attachment Definition Created' : 'Attachment Definition Renamed',
+      oldValue: before || '(none)',
+      newValue: currentName || '(none)',
+      changedBy: 'System Admin',
+      changedOn: getSystemDatetimeString(),
+      productName: ATTACHMENT_LEDGER_LABEL
+    }, ...prev]);
   };
   const removeAttachmentDefinition = (id: string) => {
     const target = attachmentDefinitions.find(a => a.id === id);
-    const productsUsingAttachment = target ? products.filter(p =>
+    const productsUsingAttachment = target ? getProductsWithOpenDraft().filter(p =>
       (p.documentRequirements || []).some(r => r.attachmentName === target.name) ||
       (p.documentRequirementsRB || []).some(r => r.attachmentName === target.name)
     ) : [];
@@ -1392,6 +1519,16 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
       return;
     }
     if (!confirm(`Are you sure you want to delete "${target?.name}"?`)) return;
+    setProductAudits(prev => [{
+      id: `AUD-ATT-${Date.now()}`,
+      eventType: 'Configuration Change',
+      changedField: 'Attachment Definition Deleted',
+      oldValue: target?.name || '(unknown)',
+      newValue: '(deleted)',
+      changedBy: 'System Admin',
+      changedOn: getSystemDatetimeString(),
+      productName: ATTACHMENT_LEDGER_LABEL
+    }, ...prev]);
     setAttachmentDefinitions(prev => prev.filter(a => a.id !== id));
   };
 
@@ -3195,6 +3332,8 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
                           type="text"
                           value={a.name}
                           onChange={e => updateAttachmentDefinition(a.id, { name: e.target.value })}
+                          onFocus={e => captureAttachmentNameOnFocus(a.id, e.target.value)}
+                          onBlur={e => commitAttachmentNameAudit(a.id, e.target.value)}
                           placeholder="e.g. Appointment Letter"
                           className="w-full px-2 py-1.5 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-orange-500"
                         />
