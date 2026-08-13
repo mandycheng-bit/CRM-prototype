@@ -46,7 +46,7 @@ const CAMPAIGN_OPTIONS = MOCK_CAMPAIGNS.filter(c => c.active).map(c => c.name);
 // carries them baked into its own vendorFields/premiumFields/dateTransferFields
 // array — this strips them out of whatever's loaded so they stop rendering here
 // regardless of when the product was last saved in Product Configuration.
-const REMOVED_PRODUCT_FIELD_NAMES = ['Member First Name', 'Member Last Name'];
+const REMOVED_PRODUCT_FIELD_NAMES = ['Member First Name', 'Member Last Name', 'No. of Employee / Insured', 'Current Annual Contribution', 'Current Net Asset Value'];
 const stripRemovedProductFields = (list: any[]): any[] => list.map(p => ({
   ...p,
   vendorFields: (p.vendorFields || []).filter((f: any) => !REMOVED_PRODUCT_FIELD_NAMES.includes(f.name)),
@@ -81,14 +81,36 @@ const EVAL_FIELD_SPECS: Record<string, EvalFieldSpec> = {
   'Existing Scheme 3': { type: 'mpf-lookup' },
   'Existing Scheme 4': { type: 'mpf-lookup' },
   'Existing Scheme 5': { type: 'mpf-lookup' },
+  // Sub-fields shown under each Existing Scheme N once that scheme is selected —
+  // not configurable in Product Setting, always required when shown (see renderSchemeSubFields).
+  'No. of Employee / Insured (Existing Scheme 1)': { type: 'integer' },
+  'Current Annual Contribution (Existing Scheme 1)': { type: 'decimal2' },
+  'Current Net Asset Value (Existing Scheme 1)': { type: 'integer' },
+  'No. of Employee / Insured (Existing Scheme 2)': { type: 'integer' },
+  'Current Annual Contribution (Existing Scheme 2)': { type: 'decimal2' },
+  'Current Net Asset Value (Existing Scheme 2)': { type: 'integer' },
+  'No. of Employee / Insured (Existing Scheme 3)': { type: 'integer' },
+  'Current Annual Contribution (Existing Scheme 3)': { type: 'decimal2' },
+  'Current Net Asset Value (Existing Scheme 3)': { type: 'integer' },
+  'No. of Employee / Insured (Existing Scheme 4)': { type: 'integer' },
+  'Current Annual Contribution (Existing Scheme 4)': { type: 'decimal2' },
+  'Current Net Asset Value (Existing Scheme 4)': { type: 'integer' },
+  'No. of Employee / Insured (Existing Scheme 5)': { type: 'integer' },
+  'Current Annual Contribution (Existing Scheme 5)': { type: 'decimal2' },
+  'Current Net Asset Value (Existing Scheme 5)': { type: 'integer' },
   'Proposed Service Provider': { type: 'insurer-lookup' },
   'New Scheme': { type: 'mpf-lookup' },
   'Existing Insurer': { type: 'insurer-lookup' },
   'Proposed Insurer': { type: 'insurer-lookup' },
 
-  'No. of Employee / Insured': { type: 'integer' },
-  'Current Annual Contribution': { type: 'decimal2' },
-  'Current Net Asset Value': { type: 'decimal2' },
+  'Total Annual Contribution': {
+    type: 'auto2',
+    formula: v => [1, 2, 3, 4, 5].reduce((sum, n) => sum + (parseFloat(v[`Current Annual Contribution (Existing Scheme ${n})`]) || 0), 0)
+  },
+  'Total ATO': {
+    type: 'auto2',
+    formula: v => [1, 2, 3, 4, 5].reduce((sum, n) => sum + (parseFloat(v[`Current Net Asset Value (Existing Scheme ${n})`]) || 0), 0)
+  },
   'Employer Option': { type: 'employer-option' },
   // Auto-filled and locked from the selected Employer Option's configured default weighting (Opportunity Configuration).
   'Est Conversion Rate - Contribution (%)': { type: 'readonly-percent2' },
@@ -1228,9 +1250,8 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
           { name: 'Proposed Insurer', visible: true, required: true }
         ],
         premiumFields: [
-          { name: 'No. of Employee / Insured', visible: true, required: true },
-          { name: 'Current Annual Contribution', visible: true, required: false },
-          { name: 'Current Net Asset Value', visible: true, required: false },
+          { name: 'Total Annual Contribution', visible: true, required: false },
+          { name: 'Total ATO', visible: true, required: false },
           { name: 'Employer Option', visible: true, required: false }
         ],
         dateTransferFields: [
@@ -1252,7 +1273,6 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
           { name: 'Existing Insurer', visible: true, required: false }
         ],
         premiumFields: [
-          { name: 'No. of Employee / Insured', visible: true, required: false },
           { name: 'Est Premium', visible: true, required: true },
           { name: 'Commission Amount', visible: true, required: false }
         ],
@@ -1290,7 +1310,6 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
           { name: 'Existing Insurer', visible: true, required: false }
         ],
         premiumFields: [
-          { name: 'No. of Employee / Insured', visible: true, required: false },
           { name: 'Est Premium', visible: true, required: true },
           { name: 'Commission Amount', visible: true, required: false }
         ],
@@ -1311,7 +1330,6 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
           { name: 'Existing Insurer', visible: true, required: false }
         ],
         premiumFields: [
-          { name: 'No. of Employee / Insured', visible: true, required: false },
           { name: 'Est Premium', visible: true, required: true }
         ],
         dateTransferFields: [
@@ -1330,7 +1348,6 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     const fallback = {
       'Proposed Service Provider': 'AIA International',
       'Existing Insurer': 'Manulife (International)',
-      'No. of Employee / Insured': '45',
       'Est Premium': '150000.00',
       'Est Commission Rate': '15.00',
       'Application Date': '2026-03-25',
@@ -1501,6 +1518,22 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       <FieldView key={f.name} label={f.name} required={f.required} editing={isEditMode} viewValue={viewValue}>
         {control}
       </FieldView>
+    );
+  };
+
+  // Not configurable in Product Setting: these 3 sub-fields appear under an
+  // Existing Scheme N field the moment that scheme has a value, and are always
+  // required while shown (independent of Existing Scheme N's own required flag).
+  const renderSchemeSubFields = (fieldName: string) => {
+    const match = fieldName.match(/^Existing Scheme (\d)$/);
+    if (!match || !evaluationValues[fieldName]) return null;
+    const n = match[1];
+    return (
+      <React.Fragment key={`${fieldName}-subfields`}>
+        {renderEvalField({ name: `No. of Employee / Insured (Existing Scheme ${n})`, required: true })}
+        {renderEvalField({ name: `Current Annual Contribution (Existing Scheme ${n})`, required: true })}
+        {renderEvalField({ name: `Current Net Asset Value (Existing Scheme ${n})`, required: true })}
+      </React.Fragment>
     );
   };
 
@@ -2523,7 +2556,12 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                     Vendor Fields
                   </h4>
                   <div className="space-y-3">
-                    {selectedProduct?.vendorFields?.filter((f: any) => f.visible).map((f: any) => renderEvalField(f))}
+                    {selectedProduct?.vendorFields?.filter((f: any) => f.visible).map((f: any) => (
+                      <React.Fragment key={f.name}>
+                        {renderEvalField(f)}
+                        {renderSchemeSubFields(f.name)}
+                      </React.Fragment>
+                    ))}
                     {(!selectedProduct?.vendorFields || selectedProduct.vendorFields.filter((f: any) => f.visible).length === 0) && (
                       <p className="text-gray-400 text-xs italic">No visible vendor fields are configured for this product.</p>
                     )}

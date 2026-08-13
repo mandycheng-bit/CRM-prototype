@@ -178,9 +178,8 @@ const INITIAL_VENDOR_FIELDS = [
 ];
 
 const INITIAL_PREMIUM_FIELDS = [
-  'No. of Employee / Insured',
-  'Current Annual Contribution',
-  'Current Net Asset Value',
+  'Total Annual Contribution',
+  'Total ATO',
   'Employer Option',
   'Est Conversion Rate - Contribution (%)',
   'Est Conversion Rate - Asset Transfer (%)',
@@ -215,7 +214,7 @@ const INITIAL_DATE_TRANSFER_FIELDS = [
 // baked into its own vendorFields/premiumFields/dateTransferFields array — this
 // strips them out of whatever's loaded so they stop rendering regardless of when
 // the product was last saved.
-const REMOVED_FIELD_NAMES = ['Member First Name', 'Member Last Name'];
+const REMOVED_FIELD_NAMES = ['Member First Name', 'Member Last Name', 'No. of Employee / Insured', 'Current Annual Contribution', 'Current Net Asset Value'];
 const stripRemovedProductFields = (list: any[]): any[] => list.map(p => ({
   ...p,
   vendorFields: (p.vendorFields || []).filter((f: any) => !REMOVED_FIELD_NAMES.includes(f.name)),
@@ -585,7 +584,7 @@ const INITIAL_PRODUCTS: ProductItem[] = INITIAL_PRODUCT_NAMES.map((name, index) 
     premiumFields: INITIAL_PREMIUM_FIELDS.map((f, i) => ({
       name: f,
       visible: i < 5,
-      required: i === 0
+      required: false
     })),
     dateTransferFields: INITIAL_DATE_TRANSFER_FIELDS.map((f, i) => ({
       name: f,
