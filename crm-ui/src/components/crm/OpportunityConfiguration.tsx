@@ -122,7 +122,7 @@ export default function OpportunityConfiguration({ proposals }: OpportunityConfi
 
   const handleEmployerSave = () => {
     const trimmedName = employerNameInput.trim();
-    if (!trimmedName) { alert('Employer Name is required.'); return; }
+    if (!trimmedName) { alert('Employer Option Name is required.'); return; }
     const contribution = parseFloat(contributionInput);
     const assetTransfer = parseFloat(assetTransferInput);
     if (isNaN(contribution) || contribution < 0 || contribution > 100) { alert('Def projected weighting - contribution must be a number between 0 and 100.'); return; }
@@ -229,7 +229,7 @@ export default function OpportunityConfiguration({ proposals }: OpportunityConfi
 
           <div className="border rounded-xl overflow-hidden bg-gray-50/50">
             <div className="grid grid-cols-[1fr_repeat(2,minmax(0,10rem))_4.5rem] gap-2 px-3 py-2 text-[9px] font-black uppercase text-gray-400 border-b bg-gray-50">
-              <span>Employer Name</span>
+              <span>Employer Option Name</span>
               <span>Def Projected Weighting - Contribution</span>
               <span>Def Projected Weighting - Asset Transfer</span>
               <span></span>
@@ -332,12 +332,12 @@ export default function OpportunityConfiguration({ proposals }: OpportunityConfi
 
             <div className="p-5 space-y-3">
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-gray-400 block">Employer Name</label>
+                <label className="text-[10px] font-black uppercase text-gray-400 block">Employer Option Name</label>
                 <input
                   type="text"
                   value={employerNameInput}
                   onChange={e => setEmployerNameInput(e.target.value)}
-                  placeholder="Employer Name"
+                  placeholder="Employer Option Name"
                   autoFocus
                   className="w-full px-3 py-1.5 border rounded-lg border-gray-300 focus:border-orange-500 outline-none text-xs font-bold text-gray-800 bg-white h-9"
                 />
