@@ -318,6 +318,9 @@ export interface ChildProposal {
   sobApprovedDate?: string;
   sobRejectReason?: string;
   mcrUploaded?: boolean;
+  // Finalize → Odoo push (2027 Phase 3)
+  odooPushed?: boolean;
+  odooPushDate?: string;
 }
 
 export interface UploadedRequirementFile {
