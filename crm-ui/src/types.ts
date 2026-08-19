@@ -312,6 +312,12 @@ export interface ChildProposal {
   // Renewal History (Expired Policy) fields
   expiryDate?: string;
   billingMethod?: string;
+  // GMED workflow — SOB approval queue + MCR upload (2027 Phase 2)
+  sobApproved?: boolean;
+  sobApprovedBy?: string;
+  sobApprovedDate?: string;
+  sobRejectReason?: string;
+  mcrUploaded?: boolean;
 }
 
 export interface UploadedRequirementFile {

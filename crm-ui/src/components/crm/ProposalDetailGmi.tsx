@@ -1622,6 +1622,27 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     URL.revokeObjectURL(url);
   };
 
+  // GMED (Group Medical) drives whether the SOB approval step is required (real GMI workflow).
+  const isGmed = /medical|gmed/i.test(`${editedOpportunity.productCategory || ''} ${editedOpportunity.productItem || ''}`);
+
+  const handleApproveSob = (child: ChildProposal) => {
+    setSelectedChild({ ...child, sobApproved: true, sobApprovedBy: editedOpportunity.salesRep1 || 'CSPA', sobApprovedDate: new Date().toISOString().slice(0, 10), sobRejectReason: undefined });
+    setAuditLogs(prev => [{ id: `A${prev.length + 1}`, action: 'SOB Approved (CSPA)', user: 'CSPA', date: new Date().toISOString().replace('T', ' ').substring(0, 16), details: 'Schedule of Benefits checked plan-by-plan against insurer claims, then approved.' }, ...prev]);
+  };
+
+  const handleRejectSob = (child: ChildProposal) => {
+    const reason = prompt('Reject SOB — reason (returned to Sales to revise):');
+    if (reason === null) return;
+    setSelectedChild({ ...child, sobApproved: false, sobRejectReason: reason });
+    setAuditLogs(prev => [{ id: `A${prev.length + 1}`, action: 'SOB Rejected (CSPA)', user: 'CSPA', date: new Date().toISOString().replace('T', ' ').substring(0, 16), details: `SOB rejected: ${reason || '(no reason given)'}` }, ...prev]);
+  };
+
+  const handleUploadMcr = (child: ChildProposal) => {
+    setSelectedChild({ ...child, mcrUploaded: true });
+    setAuditLogs(prev => [{ id: `A${prev.length + 1}`, action: 'MCR File Uploaded & Processed', user: editedOpportunity.salesRep1 || 'Sales', date: new Date().toISOString().replace('T', ' ').substring(0, 16), details: 'MCR file uploaded; preliminary company benefits and premium breakdown identified.' }, ...prev]);
+    alert('MCR file uploaded and processed (prototype mock). Preliminary benefits & premium breakdown identified.');
+  };
+
   const handleExportMcrReport = (child: ChildProposal) => {
     const content = [
       'MCR Report',
@@ -1911,6 +1932,11 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       return;
     }
     setRenewRequiredError(false);
+
+    if (isGmed && !p.sobApproved) {
+      alert('This is a Group Medical (GMED) proposal — its Schedule of Benefits (SOB) must be approved (CSPA) before converting to a policy.');
+      return;
+    }
 
     const newPolicyId = `POL-MEDIA-${Date.now().toString().slice(-5)}`;
     const convertedChild: ChildProposal = { ...p, status: 'Converted to Policy', policyId: newPolicyId };
@@ -2743,6 +2769,9 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
               <div className="flex items-center gap-2">
                 <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 font-mono font-black text-[10px] rounded">{selectedChild.id}</span>
                 <h2 className="text-sm font-bold text-gray-900">{selectedChild.name}</h2>
+                {isGmed && <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 font-black text-[10px] rounded uppercase tracking-wider">GMED</span>}
+                {isGmed && selectedChild.sobApproved && <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px] rounded">SOB Approved</span>}
+                {isGmed && !selectedChild.sobApproved && selectedChild.sobRejectReason && <span className="px-1.5 py-0.5 bg-red-50 text-red-700 border border-red-200 font-bold text-[10px] rounded" title={selectedChild.sobRejectReason}>SOB Rejected</span>}
               </div>
               <p className="text-[10px] text-gray-500">Opportunity: <span className="font-semibold text-gray-700">{editedOpportunity.name}</span> · Customer: {editedOpportunity.company}</p>
             </div>
@@ -2832,6 +2861,31 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                 <Download size={13} />
                 <span>Download SOB Report</span>
               </button>
+              <button
+                onClick={() => handleUploadMcr(selectedChild)}
+                className="px-3 py-1.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 rounded font-bold transition-all flex items-center gap-1.5"
+              >
+                <Upload size={13} />
+                <span>{selectedChild.mcrUploaded ? 'MCR Uploaded ✓' : 'Upload MCR'}</span>
+              </button>
+              {isGmed && !selectedChild.sobApproved && (
+                <>
+                  <button
+                    onClick={() => handleApproveSob(selectedChild)}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold transition-all shadow-sm flex items-center gap-1.5"
+                  >
+                    <Check size={13} />
+                    <span>Approve SOB (CSPA)</span>
+                  </button>
+                  <button
+                    onClick={() => handleRejectSob(selectedChild)}
+                    className="px-3 py-1.5 bg-white hover:bg-red-50 border border-red-200 text-red-600 rounded font-bold transition-all flex items-center gap-1.5"
+                  >
+                    <XCircle size={13} />
+                    <span>Reject SOB</span>
+                  </button>
+                </>
+              )}
               {selectedChild.status === 'Approved' && (
                 <button
                   onClick={() => handleConvertToPolicy(selectedChild)}
