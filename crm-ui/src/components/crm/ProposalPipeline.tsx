@@ -22,9 +22,9 @@ type DealsView = 'active' | 'archived';
 // Board columns are Oppty Stage (probability), not the raw `stage` field:
 // "Case Lost" = probability 0%, "Expired" = still open (not 0%/100%) but the
 // Effective Date has already passed, otherwise grouped by probability — a value
-// that doesn't land exactly on one of these thresholds (e.g. NB's 90%) is
-// folded down into the nearest lower one (e.g. 90% shows under 70%).
-const NB_STAGE_THRESHOLDS = [10, 30, 70, 100];
+// that doesn't land exactly on one of these thresholds is folded down into
+// the nearest lower one.
+const NB_STAGE_THRESHOLDS = [10, 30, 70, 90, 100];
 const RB_STAGE_THRESHOLDS = [65, 75, 85, 95, 100];
 const CASE_LOST_COLUMN = 'Case Lost';
 const EXPIRED_COLUMN = 'Expired';
