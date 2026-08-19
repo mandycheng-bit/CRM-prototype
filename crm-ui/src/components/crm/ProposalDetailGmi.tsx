@@ -1939,7 +1939,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       id: renewalId,
       name: `${editedOpportunity.name} (Renewal)`,
       stage: 'Draft',
-      probability: 30,
+      probability: 65, // RB entry-level (lowest valid Renewal probability); 30 was invalid for RB
       businessType: 'Renewal',
       client: editedOpportunity.company,
       salesRep: editedOpportunity.salesRep1,
@@ -1966,7 +1966,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       salesRep3NetAmount: 0,
       opptyRejectDate: undefined,
       opptyRejectFrequency: 0,
-      // A fresh renewal starts at 30% with no Proposal of its own yet — must not
+      // A fresh renewal starts at 65% (RB entry-level) with no Proposal of its own yet — must not
       // inherit the original Opportunity's Proposal history via the ...proposal spread.
       childProposals: [],
     };
