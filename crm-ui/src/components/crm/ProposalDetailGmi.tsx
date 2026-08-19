@@ -1622,6 +1622,41 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     URL.revokeObjectURL(url);
   };
 
+  // GMED (Group Medical) drives whether the SOB approval step is required (real GMI workflow).
+  const isGmed = /medical|gmed/i.test(`${editedOpportunity.productCategory || ''} ${editedOpportunity.productItem || ''}`);
+
+  const handleApproveSob = (child: ChildProposal) => {
+    setSelectedChild({ ...child, sobApproved: true, sobApprovedBy: editedOpportunity.salesRep1 || 'CSPA', sobApprovedDate: new Date().toISOString().slice(0, 10), sobRejectReason: undefined });
+    setAuditLogs(prev => [{ id: `A${prev.length + 1}`, action: 'SOB Approved (CSPA)', user: 'CSPA', date: new Date().toISOString().replace('T', ' ').substring(0, 16), details: 'Schedule of Benefits checked plan-by-plan against insurer claims, then approved.' }, ...prev]);
+  };
+
+  const handleRejectSob = (child: ChildProposal) => {
+    const reason = prompt('Reject SOB — reason (returned to Sales to revise):');
+    if (reason === null) return;
+    setSelectedChild({ ...child, sobApproved: false, sobRejectReason: reason });
+    setAuditLogs(prev => [{ id: `A${prev.length + 1}`, action: 'SOB Rejected (CSPA)', user: 'CSPA', date: new Date().toISOString().replace('T', ' ').substring(0, 16), details: `SOB rejected: ${reason || '(no reason given)'}` }, ...prev]);
+  };
+
+  const handleUploadMcr = (child: ChildProposal) => {
+    setSelectedChild({ ...child, mcrUploaded: true });
+    setAuditLogs(prev => [{ id: `A${prev.length + 1}`, action: 'MCR File Uploaded & Processed', user: editedOpportunity.salesRep1 || 'Sales', date: new Date().toISOString().replace('T', ' ').substring(0, 16), details: 'MCR file uploaded; preliminary company benefits and premium breakdown identified.' }, ...prev]);
+    alert('MCR file uploaded and processed (prototype mock). Preliminary benefits & premium breakdown identified.');
+  };
+
+  // Finalize → push the quotation to Odoo (real flow: Finalize hands the proposal to Odoo Sales
+  // once; premium state advances Presales → Quotation). Orthogonal to the status chevron so the
+  // existing Approved→Convert path is untouched.
+  const handleFinalizePush = (child: ChildProposal) => {
+    if (isGmed && !child.sobApproved) {
+      alert('Group Medical (GMED): the SOB must be approved (CSPA) before finalizing and pushing to Odoo.');
+      return;
+    }
+    if (child.odooPushed) return;
+    setSelectedChild({ ...child, odooPushed: true, odooPushDate: new Date().toISOString().slice(0, 10) });
+    setAuditLogs(prev => [{ id: `A${prev.length + 1}`, action: 'Finalized → pushed to Odoo', user: editedOpportunity.salesRep1 || 'Sales', date: new Date().toISOString().replace('T', ' ').substring(0, 16), details: `Quotation pushed to Odoo Sales for ${child.id}. Premium state: Presales → Quotation.` }, ...prev]);
+    alert('Proposal finalized. Quotation pushed to Odoo (prototype mock). Premium state advanced: Presales → Quotation.');
+  };
+
   const handleExportMcrReport = (child: ChildProposal) => {
     const content = [
       'MCR Report',
@@ -1912,6 +1947,11 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     }
     setRenewRequiredError(false);
 
+    if (isGmed && !p.sobApproved) {
+      alert('This is a Group Medical (GMED) proposal — its Schedule of Benefits (SOB) must be approved (CSPA) before converting to a policy.');
+      return;
+    }
+
     const newPolicyId = `POL-MEDIA-${Date.now().toString().slice(-5)}`;
     const convertedChild: ChildProposal = { ...p, status: 'Converted to Policy', policyId: newPolicyId };
     setChildProposals(prev => prev.map(item => item.id === p.id ? convertedChild : item));
@@ -1939,7 +1979,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       id: renewalId,
       name: `${editedOpportunity.name} (Renewal)`,
       stage: 'Draft',
-      probability: 30,
+      probability: 65, // RB entry-level (lowest valid Renewal probability); 30 was invalid for RB
       businessType: 'Renewal',
       client: editedOpportunity.company,
       salesRep: editedOpportunity.salesRep1,
@@ -1966,7 +2006,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       salesRep3NetAmount: 0,
       opptyRejectDate: undefined,
       opptyRejectFrequency: 0,
-      // A fresh renewal starts at 30% with no Proposal of its own yet — must not
+      // A fresh renewal starts at 65% (RB entry-level) with no Proposal of its own yet — must not
       // inherit the original Opportunity's Proposal history via the ...proposal spread.
       childProposals: [],
     };
@@ -2743,6 +2783,10 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
               <div className="flex items-center gap-2">
                 <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 font-mono font-black text-[10px] rounded">{selectedChild.id}</span>
                 <h2 className="text-sm font-bold text-gray-900">{selectedChild.name}</h2>
+                {isGmed && <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 font-black text-[10px] rounded uppercase tracking-wider">GMED</span>}
+                {isGmed && selectedChild.sobApproved && <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px] rounded">SOB Approved</span>}
+                {isGmed && !selectedChild.sobApproved && selectedChild.sobRejectReason && <span className="px-1.5 py-0.5 bg-red-50 text-red-700 border border-red-200 font-bold text-[10px] rounded" title={selectedChild.sobRejectReason}>SOB Rejected</span>}
+                {selectedChild.odooPushed && <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold text-[10px] rounded">Quotation → Odoo</span>}
               </div>
               <p className="text-[10px] text-gray-500">Opportunity: <span className="font-semibold text-gray-700">{editedOpportunity.name}</span> · Customer: {editedOpportunity.company}</p>
             </div>
@@ -2832,6 +2876,40 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                 <Download size={13} />
                 <span>Download SOB Report</span>
               </button>
+              <button
+                onClick={() => handleUploadMcr(selectedChild)}
+                className="px-3 py-1.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 rounded font-bold transition-all flex items-center gap-1.5"
+              >
+                <Upload size={13} />
+                <span>{selectedChild.mcrUploaded ? 'MCR Uploaded ✓' : 'Upload MCR'}</span>
+              </button>
+              {isGmed && !selectedChild.sobApproved && (
+                <>
+                  <button
+                    onClick={() => handleApproveSob(selectedChild)}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold transition-all shadow-sm flex items-center gap-1.5"
+                  >
+                    <Check size={13} />
+                    <span>Approve SOB (CSPA)</span>
+                  </button>
+                  <button
+                    onClick={() => handleRejectSob(selectedChild)}
+                    className="px-3 py-1.5 bg-white hover:bg-red-50 border border-red-200 text-red-600 rounded font-bold transition-all flex items-center gap-1.5"
+                  >
+                    <XCircle size={13} />
+                    <span>Reject SOB</span>
+                  </button>
+                </>
+              )}
+              {!selectedChild.odooPushed && (
+                <button
+                  onClick={() => handleFinalizePush(selectedChild)}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold transition-all shadow-sm flex items-center gap-1.5"
+                >
+                  <Send size={13} />
+                  <span>Finalize → Push to Odoo</span>
+                </button>
+              )}
               {selectedChild.status === 'Approved' && (
                 <button
                   onClick={() => handleConvertToPolicy(selectedChild)}
@@ -3139,6 +3217,31 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
               {/* Premium */}
               {activeWorkspaceTab === 'premium' && (
                 <div className="space-y-4">
+                  <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
+                    <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider mb-1 border-b border-gray-100 pb-2">Premium State Model</h3>
+                    <p className="text-[11px] text-gray-500 mb-3 mt-2">One premium object across the merged system — the same figure is no longer renamed 4× across GMI + Odoo.</p>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {(() => {
+                        const state = (selectedChild.policyId || selectedChild.status === 'Converted to Policy') ? 'Invoice' : (selectedChild.odooPushed || selectedChild.status === 'Finalized') ? 'Quotation' : 'Presales';
+                        const steps = [
+                          { k: 'Presales', label: 'Presales Premium', sys: 'GMI · proposal' },
+                          { k: 'Quotation', label: 'Quotation Premium', sys: 'Odoo Sales' },
+                          { k: 'Invoice', label: 'Invoice Premium', sys: 'Odoo · billed' },
+                          { k: 'Actual', label: 'Actual Premium', sys: 'Odoo · settled' },
+                        ];
+                        const cur = steps.findIndex(x => x.k === state);
+                        return steps.map((st, i) => (
+                          <React.Fragment key={st.k}>
+                            <div className={`px-3 py-2 rounded-lg border text-center ${i === cur ? 'bg-orange-500 border-orange-500 text-white' : i < cur ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
+                              <div className="text-[11px] font-bold whitespace-nowrap">{st.label}</div>
+                              <div className="text-[9px] opacity-80 whitespace-nowrap">{st.sys}</div>
+                            </div>
+                            {i < steps.length - 1 && <ChevronRight size={14} className="text-gray-300 shrink-0" />}
+                          </React.Fragment>
+                        ));
+                      })()}
+                    </div>
+                  </div>
                   <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
                     <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider mb-4 border-b border-gray-100 pb-2">Premium by Employee Class</h3>
                     <div className="overflow-x-auto border border-gray-150 rounded">

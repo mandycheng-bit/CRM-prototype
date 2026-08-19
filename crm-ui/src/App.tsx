@@ -151,7 +151,7 @@ export default function App() {
               setSelectedProposal(null);
             }}
             onSave={(p) => {
-              setProposals(prev => prev.map(x => x.id === p.id ? p : x));
+              setProposals(prev => prev.some(x => x.id === p.id) ? prev.map(x => x.id === p.id ? p : x) : [...prev, p]);
               setSelectedProposal(p);
             }}
             onCreateRenewal={(renewalProspect) => {
@@ -175,6 +175,9 @@ export default function App() {
             onImportProposals={(newOnes) => setProposals(prev => [...prev, ...newOnes])}
             onUpdateProposal={(p) => setProposals(prev => prev.map(x => x.id === p.id ? p : x))}
             onDeleteProposal={(id) => setProposals(prev => prev.filter(p => p.id !== id))}
+            onCreateProspect={(businessType) => {
+              setSelectedProposal(buildBlankProposal(businessType));
+            }}
           />
         </ErrorBoundary>
       );
