@@ -12,6 +12,7 @@ interface ProposalPipelineProps {
   onImportProposals?: (newProposals: Proposal[]) => void;
   onUpdateProposal?: (proposal: Proposal) => void;
   onDeleteProposal?: (id: string) => void;
+  onCreateProspect?: (businessType: 'NB' | 'Renewal') => void;
 }
 
 type DealsView = 'active' | 'lost' | 'archived';
@@ -125,7 +126,7 @@ const parseCsv = (text: string): string[][] => {
   return rows.filter(r => r.some(cell => cell.trim() !== ''));
 };
 
-const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, proposals, initialBusinessType = 'NB', onImportProposals, onUpdateProposal, onDeleteProposal }) => {
+const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, proposals, initialBusinessType = 'NB', onImportProposals, onUpdateProposal, onDeleteProposal, onCreateProspect }) => {
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
   const [dealsView, setDealsView] = useState<DealsView>('active');
   const [openRowMenuId, setOpenRowMenuId] = useState<string | null>(null);
@@ -908,7 +909,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
             )}
           </div>
           <input type="file" accept=".csv" ref={importInputRef} onChange={handleImportFile} className="hidden" />
-          <button className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors shadow-sm shadow-orange-500/20 whitespace-nowrap">
+          <button onClick={() => onCreateProspect?.(businessTypeFilter)} className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors shadow-sm shadow-orange-500/20 whitespace-nowrap">
             <Plus size={16} />
             <span>New Prospect</span>
           </button>
