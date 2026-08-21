@@ -133,6 +133,8 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
   const rowMenuRef = useRef<HTMLDivElement>(null);
   const [businessTypeFilter, setBusinessTypeFilter] = useState<'NB' | 'Renewal'>(initialBusinessType);
   const [searchQuery, setSearchQuery] = useState('');
+  const [effectiveFrom, setEffectiveFrom] = useState('');
+  const [effectiveTo, setEffectiveTo] = useState('');
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [activeFilters, setActiveFilters] = useState<Record<FilterKey, string>>({
     salesRep: '', salesTeam: '', productItem: '', productTeam: '', productCategory: '', gmiProductGroup: '',
@@ -356,7 +358,8 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allProposals, configuredProducts]);
 
-  const activeFilterCount = Object.values(activeFilters).filter(Boolean).length;
+  const dateFilterActive = !!(effectiveFrom || effectiveTo);
+  const activeFilterCount = Object.values(activeFilters).filter(Boolean).length + (dateFilterActive ? 1 : 0);
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
 
@@ -371,13 +374,26 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
     if (p.businessType !== businessTypeFilter) return false;
 
     if (normalizedQuery) {
-      const haystack = [p.id, p.name, getCompanyId(p), p.client || ''].join(' ').toLowerCase();
+      // Unified search — folds the current GMI's three separate search scopes
+      // (sorting fields / policy-content fields / policy-master fields) into one
+      // box: Oppty ID/Name, Company ID/Name, Insurer, Product, Sales Rep,
+      // Campaign, Policy No., Premium, and Region.
+      const premiumForSearch = p.finalPremium ?? p.finalQuotedPremium ?? p.totalPremium ?? p.premiumEstimate ?? '';
+      const haystack = [
+        p.id, p.name, getCompanyId(p), p.client || '',
+        p.insurer || p.insurerTentative || '', p.productItem, p.productCategory,
+        getGmiProductGroup(p), p.salesRep, p.campaign, p.linkedPolicyId || '',
+        String(premiumForSearch || ''), p.regionMarket || '',
+      ].join(' ').toLowerCase();
       if (!haystack.includes(normalizedQuery)) return false;
     }
 
     for (const { key } of FILTER_FIELDS) {
       if (activeFilters[key] && fieldValueGetters[key](p) !== activeFilters[key]) return false;
     }
+
+    if (effectiveFrom && (!p.effectiveDate || p.effectiveDate < effectiveFrom)) return false;
+    if (effectiveTo && (!p.effectiveDate || p.effectiveDate > effectiveTo)) return false;
 
     return true;
   });
@@ -388,7 +404,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
   useEffect(() => {
     setSelectedProposalIds(new Set(filteredProposals.map(p => p.id)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [proposals, searchQuery, businessTypeFilter, dealsView, activeFilters]);
+  }, [proposals, searchQuery, businessTypeFilter, dealsView, activeFilters, effectiveFrom, effectiveTo]);
 
   const toggleProposalSelected = (id: string) => {
     setSelectedProposalIds(prev => {
@@ -588,10 +604,14 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
               <th className="px-6 py-4 text-left">Prospect ID</th>
               <th className="px-6 py-4 text-left">Prospect Name</th>
               <th className="px-6 py-4 text-left">Company</th>
+              <th className="px-6 py-4 text-left">Insurer</th>
+              <th className="px-6 py-4 text-left">Product (Class)</th>
               <th className="px-6 py-4 text-left">Stage</th>
               <th className="px-6 py-4 text-right">Gross Revenue</th>
               <th className="px-6 py-4 text-right">Net Revenue</th>
+              <th className="px-6 py-4 text-right">Premium</th>
               <th className="px-6 py-4 text-left">Sales Owner</th>
+              <th className="px-6 py-4 text-left">Effective Date</th>
               <th className="px-6 py-4 text-left">Last Updated</th>
               <th className="px-6 py-4 text-right">Actions</th>
             </tr>
@@ -646,6 +666,8 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                   </div>
                 </td>
                 <td className="px-6 py-4 text-gray-600">{proposal.client}</td>
+                <td className="px-6 py-4 text-gray-600">{proposal.insurer || proposal.insurerTentative || '—'}</td>
+                <td className="px-6 py-4 text-gray-600">{proposal.productCategory || '—'}</td>
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-1.5">
                     <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${
@@ -663,6 +685,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                 </td>
                 <td className="px-6 py-4 text-right font-bold text-gray-900">${proposal.expectedRevenueGross.toLocaleString()}</td>
                 <td className="px-6 py-4 text-right font-medium text-gray-600">${proposal.expectedRevenueNet.toLocaleString()}</td>
+                <td className="px-6 py-4 text-right font-medium text-gray-700">{(() => { const prem = proposal.finalPremium ?? proposal.finalQuotedPremium ?? proposal.totalPremium ?? proposal.premiumEstimate; return prem ? `HK$ ${prem.toLocaleString()}` : '—'; })()}</td>
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-[8px] font-bold text-blue-600">
@@ -671,6 +694,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                     <span className="text-xs text-gray-600">{proposal.salesRep}</span>
                   </div>
                 </td>
+                <td className="px-6 py-4 text-xs text-gray-500">{proposal.effectiveDate || '—'}</td>
                 <td className="px-6 py-4 text-xs text-gray-400">{proposal.lastUpdated}</td>
                 <td className="px-6 py-4 text-right relative" onClick={(e) => e.stopPropagation()}>
                   <button
@@ -811,7 +835,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                   <span className="text-xs font-bold text-gray-700">Filters</span>
                   {activeFilterCount > 0 && (
                     <button
-                      onClick={() => setActiveFilters({ salesRep: '', salesTeam: '', productItem: '', productTeam: '', productCategory: '', gmiProductGroup: '' })}
+                      onClick={() => { setActiveFilters({ salesRep: '', salesTeam: '', productItem: '', productTeam: '', productCategory: '', gmiProductGroup: '' }); setEffectiveFrom(''); setEffectiveTo(''); }}
                       className="text-[11px] text-orange-600 hover:text-orange-700 font-medium"
                     >
                       Clear all
@@ -834,6 +858,14 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                       </select>
                     </div>
                   ))}
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Effective Date Range</label>
+                    <div className="flex items-center gap-1.5">
+                      <input type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded bg-white focus:outline-none focus:border-orange-500" />
+                      <span className="text-gray-400 text-xs">–</span>
+                      <input type="date" value={effectiveTo} onChange={(e) => setEffectiveTo(e.target.value)} className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded bg-white focus:outline-none focus:border-orange-500" />
+                    </div>
+                  </div>
                 </div>
               </div>
               )}
