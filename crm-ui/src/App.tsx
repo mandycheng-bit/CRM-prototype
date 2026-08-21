@@ -6,6 +6,7 @@ import ProposalPipelineGmi from './components/crm/ProposalPipelineGmi';
 import ProposalDetailGmi from './components/crm/ProposalDetailGmi';
 import ProductsConfiguration from './components/crm/ProductsConfiguration';
 import OpportunityConfiguration from './components/crm/OpportunityConfiguration';
+import Benchmark from './components/crm/Benchmark';
 import { CustomerCreationSim } from './components/crm/CustomerCreationSim';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ConfirmDialog } from './components/ConfirmDialog';
@@ -184,6 +185,13 @@ export default function App() {
         </ErrorBoundary>
       );
     }
+    if (activeModule === 'benchmark') {
+      return (
+        <ErrorBoundary moduleLabel="Benchmark">
+          <Benchmark />
+        </ErrorBoundary>
+      );
+    }
     if (activeModule === 'opportunity-config') {
       return <OpportunityConfiguration proposals={proposals} />;
     }
@@ -216,6 +224,7 @@ export default function App() {
   const MODULE_LABEL: Record<ModuleId, string> = {
     'perspective-pipeline': 'Prospect Pipeline (2026)',
     'prospect-2027': 'Prospect Pipeline (2027)',
+    'benchmark': 'Benchmark',
     'products': 'Product Configuration',
     'opportunity-config': 'Opportunity Configuration',
   };
