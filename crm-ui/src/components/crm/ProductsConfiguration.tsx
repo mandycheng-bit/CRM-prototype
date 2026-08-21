@@ -22,7 +22,8 @@ import {
   Pencil,
   Settings,
   AlertTriangle,
-  Paperclip
+  Paperclip,
+  ChevronDown
 } from 'lucide-react';
 
 // ==========================================
@@ -38,6 +39,7 @@ export interface ProductItem {
   id: string;
   name: string;
   team: string; // references Product Team (CRUD-able list)
+  productGroup: string; // references Product Group (CRUD-able list) — independent flat list, sits between Product Team and Product Category
   group: string; // references Product Category (CRUD-able list)
   gmiProductGroup: string; // references GMI Product Group (Lookup)
   appliedCompanyType: 'Company' | 'Individual'; // Radio Button (single-select, required)
@@ -144,6 +146,14 @@ const INITIAL_TEAMS = [
   'LSP Projects',
   'Wellness',
   'Others'
+];
+
+// Placeholder seed values — replace with real Product Group names once the business
+// finalizes them (see GUM ticket for this hierarchy change).
+const INITIAL_PRODUCT_GROUP_OPTIONS = [
+  'Product Group A',
+  'Product Group B',
+  'Product Group C'
 ];
 
 const INITIAL_GROUPS = [
@@ -568,10 +578,12 @@ const INITIAL_PRODUCTS: ProductItem[] = INITIAL_PRODUCT_NAMES.map((name, index) 
   const team = resolveProductTeam(name);
   const category = resolveProductCategory(name);
   const gmiGroup = resolveGmiProductGroup(name);
+  const productGroup = INITIAL_PRODUCT_GROUP_OPTIONS[index % INITIAL_PRODUCT_GROUP_OPTIONS.length];
   return {
     id: `PROD-${String(index + 1).padStart(3, '0')}`,
     name,
     team,
+    productGroup,
     group: category,
     gmiProductGroup: gmiGroup,
     appliedCompanyType: index % 2 === 0 ? 'Company' : 'Individual',
@@ -606,6 +618,86 @@ export const getConfiguredProducts = (): ProductItem[] => {
   try { return stripRemovedProductFields(JSON.parse(saved)); } catch (e) { return INITIAL_PRODUCTS; }
 };
 
+// Unified searchable dropdown for the hierarchy lookups below (Product Team, Product
+// Group, Product Category, GMI Product Group) — same component/behavior as
+// ProposalDetail.tsx's SearchableDropdown (search box fixed at top of the open panel,
+// only the option list scrolls), plus a hasError prop to plug into this file's existing
+// required-field red-border convention.
+interface SearchableDropdownOption {
+  id: string;
+  label: string;
+  value: string;
+}
+const SearchableDropdown: React.FC<{
+  value: string;
+  options: SearchableDropdownOption[];
+  onSelect: (value: string) => void;
+  placeholder: string;
+  buttonPlaceholder?: string;
+  hasError?: boolean;
+  className?: string;
+}> = ({ value, options, onSelect, placeholder, buttonPlaceholder, hasError, className }) => {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const filtered = options.filter(o => o.label.toLowerCase().includes(search.toLowerCase()));
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setSearch('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className={`relative ${className || ''}`}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 border rounded-lg text-xs bg-white hover:bg-gray-50 focus:outline-none focus:border-orange-500 text-left cursor-pointer ${hasError ? 'border-red-400' : 'border-gray-300'}`}
+      >
+        <span className={`truncate ${value ? 'font-semibold text-gray-800' : 'font-normal text-gray-400'}`}>{value || buttonPlaceholder || placeholder}</span>
+        <ChevronDown size={12} className={`text-gray-400 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg flex flex-col max-h-64 overflow-hidden">
+          <div className="p-1.5 border-b border-gray-100 shrink-0">
+            <div className="relative">
+              <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                autoFocus
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder={placeholder}
+                className="w-full pl-6 pr-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-orange-500"
+              />
+            </div>
+          </div>
+          <div className="overflow-y-auto flex-1">
+            {filtered.length === 0 && <div className="px-2.5 py-2 text-xs text-gray-400 italic">No matches</div>}
+            {filtered.map(o => (
+              <button
+                type="button"
+                key={o.id}
+                onClick={() => { onSelect(o.value); setOpen(false); setSearch(''); }}
+                className={`w-full text-left px-2.5 py-1.5 text-xs hover:bg-orange-50 ${o.value === value ? 'bg-orange-50 font-bold text-orange-700' : 'text-gray-700'}`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 interface ProductsConfigurationProps {
   // Live Opportunity records, used only to validate that a Restriction Parameters
   // change doesn't orphan an existing record already sitting on a stage about to
@@ -625,6 +717,11 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
   const [productGroups, setProductGroups] = useState<string[]>(() => {
     const saved = localStorage.getItem('pr2_product_groups');
     return saved ? JSON.parse(saved) : INITIAL_GROUPS;
+  });
+
+  const [productGroupList, setProductGroupList] = useState<string[]>(() => {
+    const saved = localStorage.getItem('pr2_product_group_options');
+    return saved ? JSON.parse(saved) : INITIAL_PRODUCT_GROUP_OPTIONS;
   });
 
   // Master Data States for GMI perspective (Benefit Groups Tab)
@@ -677,6 +774,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
   const [searchQuery, setSearchQuery] = useState('');
   const [groupFilter, setGroupFilter] = useState('All');
   const [teamFilter, setTeamFilter] = useState('All');
+  const [productGroupFilter, setProductGroupFilter] = useState('All');
   const [companyTypeFilter, setCompanyTypeFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState<'Active' | 'Archived'>('Active');
   const [refSearchQuery, setRefSearchQuery] = useState('');
@@ -688,11 +786,19 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
   const [showTeamPopup, setShowTeamPopup] = useState(false);
   const [teamPopupMode, setTeamPopupMode] = useState<'create' | 'edit'>('create');
   const [teamPopupInput, setTeamPopupInput] = useState('');
+  const [teamPopupSearch, setTeamPopupSearch] = useState('');
+
+  // Inline Popups for Product Group CRUD inside Product Item Detail
+  const [showProductGroupPopup, setShowProductGroupPopup] = useState(false);
+  const [productGroupPopupMode, setProductGroupPopupMode] = useState<'create' | 'edit'>('create');
+  const [productGroupPopupInput, setProductGroupPopupInput] = useState('');
+  const [productGroupPopupSearch, setProductGroupPopupSearch] = useState('');
 
   // Inline Popups for Product Category CRUD inside Product Item Detail
   const [showCategoryPopup, setShowCategoryPopup] = useState(false);
   const [categoryPopupMode, setCategoryPopupMode] = useState<'create' | 'edit'>('create');
   const [categoryPopupInput, setCategoryPopupInput] = useState('');
+  const [categoryPopupSearch, setCategoryPopupSearch] = useState('');
 
   // Master Data States for Benefit Groups tab (GMI Workspace)
   const [selectedGmiGroupId, setSelectedGmiGroupId] = useState<string>('GMI-GRP-001');
@@ -725,6 +831,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
   // Dynamic Product Form Fields State
   const [detailName, setDetailName] = useState('');
   const [detailTeam, setDetailTeam] = useState('');
+  const [detailProductGroup, setDetailProductGroup] = useState('');
   const [detailGroup, setDetailGroup] = useState('');
   const [detailCompanyType, setDetailCompanyType] = useState<'Company' | 'Individual'>('Company');
   const [detailIsInsuranceProduct, setDetailIsInsuranceProduct] = useState<'Yes' | 'No' | ''>('');
@@ -742,7 +849,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
   const [detailConfigBusinessType, setDetailConfigBusinessType] = useState<'NB' | 'RB'>('NB');
 
   // Inline save errors
-  const [saveErrors, setSaveErrors] = useState<{ name?: string; team?: string; group?: string; gmiProductGroup?: string; salesCreditRule?: string; isInsuranceProduct?: string }>({});
+  const [saveErrors, setSaveErrors] = useState<{ name?: string; team?: string; productGroup?: string; group?: string; gmiProductGroup?: string; salesCreditRule?: string; isInsuranceProduct?: string }>({});
 
   // Modal / Toast
   const [showAuditModal, setShowAuditModal] = useState(false);
@@ -753,6 +860,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
   // Sync to LocalStorage
   useEffect(() => { localStorage.setItem('pr2_product_teams', JSON.stringify(productTeams)); }, [productTeams]);
   useEffect(() => { localStorage.setItem('pr2_product_groups', JSON.stringify(productGroups)); }, [productGroups]);
+  useEffect(() => { localStorage.setItem('pr2_product_group_options', JSON.stringify(productGroupList)); }, [productGroupList]);
   useEffect(() => { localStorage.setItem('pr2_products_list', JSON.stringify(products)); }, [products]);
   useEffect(() => { localStorage.setItem('pr2_product_audits', JSON.stringify(productAudits)); }, [productAudits]);
   useEffect(() => { localStorage.setItem('pr2_attachment_definitions', JSON.stringify(attachmentDefinitions)); }, [attachmentDefinitions]);
@@ -798,6 +906,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
   const syncDetailFieldsFromProduct = (p: ProductItem) => {
     setDetailName(p.name);
     setDetailTeam(p.team);
+    setDetailProductGroup(p.productGroup || productGroupList[0] || '');
     setDetailGroup(p.group);
     setDetailGmiProductGroup(p.gmiProductGroup || 'Pension');
     setDetailCompanyType(p.appliedCompanyType || 'Company');
@@ -841,6 +950,22 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
       localStorage.setItem('pr2_products_list', JSON.stringify(next));
     }
   }, [products]);
+
+  // Backfill Product Group for products saved before this field existed
+  useEffect(() => {
+    let updated = false;
+    const next = products.map(p => {
+      if (!p.productGroup) {
+        updated = true;
+        return { ...p, productGroup: productGroupList[0] || 'Product Group A' };
+      }
+      return p;
+    });
+    if (updated) {
+      setProducts(next);
+      localStorage.setItem('pr2_products_list', JSON.stringify(next));
+    }
+  }, [products, productGroupList]);
 
   // Active Selected GMI Product Group Item
   const selectedGmiGroup = useMemo(() => {
@@ -893,6 +1018,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
       return (
         detailName.trim() !== '' ||
         detailTeam !== '' ||
+        detailProductGroup !== '' ||
         detailGroup !== '' ||
         detailGmiProductGroup !== '' ||
         detailCompanyType !== 'Company' ||
@@ -911,6 +1037,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
     return (
       detailName !== selectedProduct.name ||
       detailTeam !== selectedProduct.team ||
+      detailProductGroup !== (selectedProduct.productGroup || '') ||
       detailGroup !== selectedProduct.group ||
       detailGmiProductGroup !== (selectedProduct.gmiProductGroup || 'Pension') ||
       detailCompanyType !== (selectedProduct.appliedCompanyType || 'Company') ||
@@ -936,12 +1063,21 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
   const closeTeamPopup = () => {
     if (isTeamPopupDirty() && !confirm('You have unsaved changes. Discard them and close?')) return;
     setShowTeamPopup(false);
+    setTeamPopupSearch('');
+  };
+
+  const isProductGroupPopupDirty = () => productGroupPopupMode === 'create' ? productGroupPopupInput.trim() !== '' : productGroupPopupInput !== productGroupPopupMode;
+  const closeProductGroupPopup = () => {
+    if (isProductGroupPopupDirty() && !confirm('You have unsaved changes. Discard them and close?')) return;
+    setShowProductGroupPopup(false);
+    setProductGroupPopupSearch('');
   };
 
   const isCategoryPopupDirty = () => categoryPopupMode === 'create' ? categoryPopupInput.trim() !== '' : categoryPopupInput !== categoryPopupMode;
   const closeCategoryPopup = () => {
     if (isCategoryPopupDirty() && !confirm('You have unsaved changes. Discard them and close?')) return;
     setShowCategoryPopup(false);
+    setCategoryPopupSearch('');
   };
 
   // Filtered lists
@@ -950,13 +1086,14 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
       const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesGroup = groupFilter === 'All' || p.group === groupFilter;
       const matchesTeam = teamFilter === 'All' || p.team === teamFilter;
+      const matchesProductGroup = productGroupFilter === 'All' || p.productGroup === productGroupFilter;
       const matchesCompanyType = companyTypeFilter === 'All' || p.appliedCompanyType === companyTypeFilter;
-      const matchesStatus = statusFilter === 'Archived' 
-        ? p.status === 'Archived' 
+      const matchesStatus = statusFilter === 'Archived'
+        ? p.status === 'Archived'
         : (p.status || 'Active') === 'Active';
-      return matchesSearch && matchesGroup && matchesTeam && matchesCompanyType && matchesStatus;
+      return matchesSearch && matchesGroup && matchesTeam && matchesProductGroup && matchesCompanyType && matchesStatus;
     });
-  }, [products, searchQuery, groupFilter, teamFilter, companyTypeFilter, statusFilter]);
+  }, [products, searchQuery, groupFilter, teamFilter, productGroupFilter, companyTypeFilter, statusFilter]);
 
   const filteredProductAudits = useMemo(() => {
     if (!auditTargetProductName) return productAudits;
@@ -970,6 +1107,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
     setIsCreatingNew(true);
     setDetailName('');
     setDetailTeam('');
+    setDetailProductGroup('');
     setDetailGroup('');
     setDetailGmiProductGroup('');
     setDetailCompanyType('Company');
@@ -1078,6 +1216,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
       if (nameIsDuplicate) errors.name = `"${detailName.trim()}" is already in use. Please specify a unique name.`;
     }
     if (!detailTeam) errors.team = 'Product Team is required.';
+    if (!detailProductGroup) errors.productGroup = 'Product Group is required.';
     if (!detailGroup) errors.group = 'Product Category is required.';
     if (!detailGmiProductGroup) errors.gmiProductGroup = 'GMI Product Group is required.';
     if (!detailSalesCreditRule) errors.salesCreditRule = 'Sales Credit Calculation Rule is required.';
@@ -1097,6 +1236,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
         id: newId,
         name: newName,
         team: detailTeam,
+        productGroup: detailProductGroup,
         group: detailGroup,
         gmiProductGroup: detailGmiProductGroup,
         appliedCompanyType: detailCompanyType,
@@ -1267,6 +1407,19 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
       });
     }
 
+    if ((selectedProduct.productGroup || '') !== detailProductGroup) {
+      newAuditsList.push({
+        id: `AUD-P-${Date.now()}-10`,
+        eventType: 'Configuration Change',
+        changedField: 'Product Group',
+        oldValue: selectedProduct.productGroup || '(none)',
+        newValue: detailProductGroup,
+        changedBy: 'System Admin',
+        changedOn: timestamp,
+        productName: detailName.trim()
+      });
+    }
+
     if (selectedProduct.group !== detailGroup) {
       newAuditsList.push({
         id: `AUD-P-${Date.now()}-3`,
@@ -1382,6 +1535,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
           ...p,
           name: detailName.trim(),
           team: detailTeam,
+          productGroup: detailProductGroup,
           group: detailGroup,
           gmiProductGroup: detailGmiProductGroup,
           appliedCompanyType: detailCompanyType,
@@ -2036,6 +2190,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
         'Product ID': p.id,
         'Product Name': p.name,
         'Product Team': p.team,
+        'Product Group': p.productGroup,
         'Product Category': p.group,
         'Applied Customer Type': p.appliedCompanyType || 'None',
         'Status': p.status || 'Active',
@@ -2158,6 +2313,19 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
 
                   <div className="lg:col-span-2">
                     <select
+                      value={productGroupFilter}
+                      onChange={(e) => setProductGroupFilter(e.target.value)}
+                      className="w-full text-xs px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg font-bold text-gray-700 outline-none h-9 cursor-pointer"
+                    >
+                      <option value="All">All Product Groups</option>
+                      {productGroupList.map((grp, idx) => (
+                        <option key={idx} value={grp}>{grp}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="lg:col-span-2">
+                    <select
                       value={groupFilter}
                       onChange={(e) => setGroupFilter(e.target.value)}
                       className="w-full text-xs px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg font-bold text-gray-700 outline-none h-9 cursor-pointer"
@@ -2227,6 +2395,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
                       <tr>
                         <th className="px-4 py-3 border-r border-gray-200 w-[260px]">Product Item</th>
                         <th className="px-4 py-3 border-r border-gray-200">Product Team</th>
+                        <th className="px-4 py-3 border-r border-gray-200">Product Group</th>
                         <th className="px-4 py-3 border-r border-gray-200">Product Category</th>
                         <th className="px-4 py-3 border-r border-gray-200">Applied Customer Type</th>
                         <th className="px-4 py-3 text-right w-24 border-r border-gray-200">Status</th>
@@ -2253,6 +2422,9 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
                             </td>
                             <td className="px-4 py-3 text-gray-800 border-r border-gray-100 font-bold">
                               {p.team}
+                            </td>
+                            <td className="px-4 py-3 text-gray-500 border-r border-gray-100 font-medium">
+                              {p.productGroup}
                             </td>
                             <td className="px-4 py-3 text-gray-500 border-r border-gray-100 font-medium">
                               {p.group}
@@ -2747,17 +2919,43 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
                             <Settings size={10} /> Manage
                           </button>
                         </div>
-                        <select
+                        <SearchableDropdown
                           value={detailTeam}
-                          onChange={(e) => { setDetailTeam(e.target.value); setSaveErrors(prev => ({ ...prev, team: undefined })); }}
-                          className={`w-full text-xs px-2.5 py-2 border rounded-lg bg-white focus:border-orange-500 outline-none font-semibold ${saveErrors.team ? 'border-red-400' : 'border-gray-300'}`}
-                        >
-                          <option value="">Please select</option>
-                          {productTeams.map((team, idx) => (
-                            <option key={idx} value={team}>{team}</option>
-                          ))}
-                        </select>
+                          options={productTeams.map(team => ({ id: team, label: team, value: team }))}
+                          onSelect={(team) => { setDetailTeam(team); setSaveErrors(prev => ({ ...prev, team: undefined })); }}
+                          placeholder="Search Product Team..."
+                          buttonPlaceholder="Please select"
+                          hasError={!!saveErrors.team}
+                        />
                         {saveErrors.team && <p className="mt-1 text-[11px] text-red-500 font-semibold">{saveErrors.team}</p>}
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[10px] font-black uppercase text-gray-400 block">
+                            Product Group
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setProductGroupPopupInput('');
+                              setProductGroupPopupMode('create');
+                              setShowProductGroupPopup(true);
+                            }}
+                            className="text-[9px] text-orange-600 font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
+                          >
+                            <Settings size={10} /> Manage
+                          </button>
+                        </div>
+                        <SearchableDropdown
+                          value={detailProductGroup}
+                          options={productGroupList.map(grp => ({ id: grp, label: grp, value: grp }))}
+                          onSelect={(grp) => { setDetailProductGroup(grp); setSaveErrors(prev => ({ ...prev, productGroup: undefined })); }}
+                          placeholder="Search Product Group..."
+                          buttonPlaceholder="Please select"
+                          hasError={!!saveErrors.productGroup}
+                        />
+                        {saveErrors.productGroup && <p className="mt-1 text-[11px] text-red-500 font-semibold">{saveErrors.productGroup}</p>}
                       </div>
 
                       <div>
@@ -2777,16 +2975,14 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
                             <Settings size={10} /> Manage
                           </button>
                         </div>
-                        <select
+                        <SearchableDropdown
                           value={detailGroup}
-                          onChange={(e) => { setDetailGroup(e.target.value); setSaveErrors(prev => ({ ...prev, group: undefined })); }}
-                          className={`w-full text-xs px-2.5 py-2 border rounded-lg bg-white focus:border-orange-500 outline-none font-semibold ${saveErrors.group ? 'border-red-400' : 'border-gray-300'}`}
-                        >
-                          <option value="">Please select</option>
-                          {productGroups.map((group, idx) => (
-                            <option key={idx} value={group}>{group}</option>
-                          ))}
-                        </select>
+                          options={productGroups.map(group => ({ id: group, label: group, value: group }))}
+                          onSelect={(group) => { setDetailGroup(group); setSaveErrors(prev => ({ ...prev, group: undefined })); }}
+                          placeholder="Search Product Category..."
+                          buttonPlaceholder="Please select"
+                          hasError={!!saveErrors.group}
+                        />
                         {saveErrors.group && <p className="mt-1 text-[11px] text-red-500 font-semibold">{saveErrors.group}</p>}
                       </div>
 
@@ -2807,16 +3003,14 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
                             <Settings size={10} /> Manage
                           </button>
                         </div>
-                        <select
+                        <SearchableDropdown
                           value={detailGmiProductGroup}
-                          onChange={(e) => { setDetailGmiProductGroup(e.target.value); setSaveErrors(prev => ({ ...prev, gmiProductGroup: undefined })); }}
-                          className={`w-full text-xs px-2.5 py-2 border rounded-lg bg-white focus:border-orange-500 outline-none font-semibold cursor-pointer ${saveErrors.gmiProductGroup ? 'border-red-400' : 'border-gray-300'}`}
-                        >
-                          <option value="">Please select</option>
-                          {gmiGroupsMaster.filter(g => g.status === 'Active').map((grp) => (
-                            <option key={grp.id} value={grp.name}>{grp.name}</option>
-                          ))}
-                        </select>
+                          options={gmiGroupsMaster.filter(g => g.status === 'Active').map(grp => ({ id: grp.id, label: grp.name, value: grp.name }))}
+                          onSelect={(name) => { setDetailGmiProductGroup(name); setSaveErrors(prev => ({ ...prev, gmiProductGroup: undefined })); }}
+                          placeholder="Search GMI Product Group..."
+                          buttonPlaceholder="Please select"
+                          hasError={!!saveErrors.gmiProductGroup}
+                        />
                         {saveErrors.gmiProductGroup && <p className="mt-1 text-[11px] text-red-500 font-semibold">{saveErrors.gmiProductGroup}</p>}
                       </div>
 
@@ -3443,8 +3637,22 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
                 </div>
               </div>
 
+              <div className="relative">
+                <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={teamPopupSearch}
+                  onChange={(e) => setTeamPopupSearch(e.target.value)}
+                  placeholder="Search Product Teams..."
+                  className="w-full pl-7 pr-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-semibold outline-none focus:border-orange-500 bg-white"
+                />
+              </div>
+
               <div className="space-y-1.5 max-h-60 overflow-y-auto border rounded-xl divide-y p-2 bg-gray-50/50">
-                {productTeams.map((team, idx) => (
+                {productTeams.filter(t => t.toLowerCase().includes(teamPopupSearch.toLowerCase())).length === 0 && (
+                  <div className="px-2 py-2 text-xs text-gray-400 italic">No matches</div>
+                )}
+                {productTeams.filter(t => t.toLowerCase().includes(teamPopupSearch.toLowerCase())).map((team, idx) => (
                   <div key={idx} className="flex items-center justify-between py-1.5 px-2 hover:bg-white rounded transition-colors text-xs font-semibold text-gray-700">
                     <span>{team}</span>
                     <div className="flex items-center gap-1">
@@ -3496,6 +3704,151 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
               <button
                 type="button"
                 onClick={closeTeamPopup}
+                className="px-4 py-1.5 bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 font-bold uppercase text-[9px] rounded-lg cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manage Product Groups Popup Dialog */}
+      {showProductGroupPopup && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-md overflow-hidden flex flex-col animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-gray-150 px-5 py-3.5 bg-gray-50">
+              <span className="text-xs font-black uppercase text-gray-900 tracking-wider">
+                Manage Product Groups
+              </span>
+              <button
+                onClick={closeProductGroupPopup}
+                className="p-1 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 cursor-pointer"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase text-gray-400 block">
+                  {productGroupPopupMode === 'create' ? 'Add New Product Group' : 'Rename Selected Product Group'}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={productGroupPopupInput}
+                    onChange={(e) => setProductGroupPopupInput(e.target.value)}
+                    placeholder="e.g. Product Group D"
+                    className="flex-1 px-3 py-1.5 border rounded-lg border-gray-300 focus:border-orange-500 outline-none text-xs font-bold text-gray-800 bg-white h-9"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!productGroupPopupInput.trim()) {
+                        alert("Product Group name is required.");
+                        return;
+                      }
+                      const trimmed = productGroupPopupInput.trim();
+                      if (productGroupPopupMode === 'create') {
+                        if (productGroupList.some(g => g.toLowerCase() === trimmed.toLowerCase())) {
+                          alert("A Product Group with this name already exists.");
+                          return;
+                        }
+                        const updated = [...productGroupList, trimmed];
+                        setProductGroupList(updated);
+                        setDetailProductGroup(trimmed);
+                        setToast(`Product Group "${trimmed}" added.`);
+                      } else {
+                        // Rename
+                        const oldName = productGroupPopupMode as string;
+                        if (productGroupList.some(g => g.toLowerCase() === trimmed.toLowerCase() && g !== oldName)) {
+                          alert("A Product Group with this name already exists.");
+                          return;
+                        }
+                        const updated = productGroupList.map(g => g === oldName ? trimmed : g);
+                        setProductGroupList(updated);
+                        if (detailProductGroup === oldName) setDetailProductGroup(trimmed);
+                        setProducts(prev => prev.map(p => p.productGroup === oldName ? { ...p, productGroup: trimmed } : p));
+                        setToast(`Renamed Product Group "${oldName}" to "${trimmed}".`);
+                      }
+                      setProductGroupPopupInput('');
+                      setProductGroupPopupMode('create');
+                    }}
+                    className="px-4 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-bold uppercase text-[9px] rounded-lg shadow-sm flex items-center justify-center gap-1 cursor-pointer h-9"
+                  >
+                    {productGroupPopupMode === 'create' ? 'Add' : 'Save'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="relative">
+                <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={productGroupPopupSearch}
+                  onChange={(e) => setProductGroupPopupSearch(e.target.value)}
+                  placeholder="Search Product Groups..."
+                  className="w-full pl-7 pr-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-semibold outline-none focus:border-orange-500 bg-white"
+                />
+              </div>
+
+              <div className="space-y-1.5 max-h-60 overflow-y-auto border rounded-xl divide-y p-2 bg-gray-50/50">
+                {productGroupList.filter(g => g.toLowerCase().includes(productGroupPopupSearch.toLowerCase())).length === 0 && (
+                  <div className="px-2 py-2 text-xs text-gray-400 italic">No matches</div>
+                )}
+                {productGroupList.filter(g => g.toLowerCase().includes(productGroupPopupSearch.toLowerCase())).map((grp, idx) => (
+                  <div key={idx} className="flex items-center justify-between py-1.5 px-2 hover:bg-white rounded transition-colors text-xs font-semibold text-gray-700">
+                    <span>{grp}</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProductGroupPopupInput(grp);
+                          setProductGroupPopupMode(grp as any);
+                        }}
+                        className="p-1 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded"
+                        title="Rename Product Group"
+                      >
+                        <Pencil size={11} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (productGroupList.length <= 1) {
+                            alert("At least one Product Group must exist.");
+                            return;
+                          }
+                          const activeProductsUsingGroup = products.filter(p => p.productGroup === grp && p.status !== 'Archived');
+                          if (activeProductsUsingGroup.length > 0) {
+                            alert(`Cannot delete Product Group because it is currently linked to ${activeProductsUsingGroup.length} active products (e.g. "${activeProductsUsingGroup[0].name}").`);
+                            return;
+                          }
+                          if (confirm(`Are you sure you want to delete Product Group "${grp}"?`)) {
+                            const updated = productGroupList.filter(g => g !== grp);
+                            setProductGroupList(updated);
+                            if (detailProductGroup === grp) {
+                              setDetailProductGroup(updated[0]);
+                            }
+                            setProducts(prev => prev.map(p => p.productGroup === grp ? { ...p, productGroup: updated[0] } : p));
+                            setToast(`Product Group "${grp}" removed.`);
+                          }
+                        }}
+                        className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                        title="Delete Product Group"
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-gray-150 px-5 py-3 bg-gray-50 flex justify-end">
+              <button
+                type="button"
+                onClick={closeProductGroupPopup}
                 className="px-4 py-1.5 bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 font-bold uppercase text-[9px] rounded-lg cursor-pointer"
               >
                 Close
@@ -3574,8 +3927,22 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
                 </div>
               </div>
 
+              <div className="relative">
+                <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={categoryPopupSearch}
+                  onChange={(e) => setCategoryPopupSearch(e.target.value)}
+                  placeholder="Search Product Categories..."
+                  className="w-full pl-7 pr-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-semibold outline-none focus:border-orange-500 bg-white"
+                />
+              </div>
+
               <div className="space-y-1.5 max-h-60 overflow-y-auto border rounded-xl divide-y p-2 bg-gray-50/50">
-                {productGroups.map((group, idx) => (
+                {productGroups.filter(g => g.toLowerCase().includes(categoryPopupSearch.toLowerCase())).length === 0 && (
+                  <div className="px-2 py-2 text-xs text-gray-400 italic">No matches</div>
+                )}
+                {productGroups.filter(g => g.toLowerCase().includes(categoryPopupSearch.toLowerCase())).map((group, idx) => (
                   <div key={idx} className="flex items-center justify-between py-1.5 px-2 hover:bg-white rounded transition-colors text-xs font-semibold text-gray-700">
                     <span>{group}</span>
                     <div className="flex items-center gap-1">
