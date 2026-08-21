@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
-  ArrowLeft, Save, CheckCircle2,
+  Save, CheckCircle2,
   TrendingUp, BarChart2, Users, Building2, DollarSign,
   Calendar, Plus, Trash2,
   XCircle, X, History, Check, Upload, FileUp,
   Info, Edit, User, Briefcase,
-  ChevronDown, Award, ClipboardCheck,
+  ChevronDown, ChevronLeft, Award, ClipboardCheck, Clock,
   Search, Archive, AlertTriangle, Settings, Pencil
 } from 'lucide-react';
 import type { Proposal, BenefitRow, ProductFileRequirement, UploadedRequirementFile } from '../../types';
@@ -316,6 +316,10 @@ interface ProposalDetailProps {
   // App.tsx swaps this page out for the simulated Customer Creation page,
   // prefilled from this Proposal.
   onConvertToCustomer?: (proposal: Proposal) => void;
+  // Fired when the user renews a Customer/Lapsed Customer Prospect that reached
+  // 100% — App.tsx adds the new renewal Prospect to the pipeline (mirrors
+  // ProposalDetailGmi's onCreateRenewal).
+  onCreateRenewal?: (renewalProspect: Proposal) => void;
 }
 
 // Master lists for resolution inside Proposal
@@ -642,7 +646,19 @@ const getOpptyStatusLabel = (p: Proposal): string => {
   return `${p.probability}%`;
 };
 
-export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allProposals, onBack, onSave, onNavigateToProspect, onDelete, currentRole = 'Sales Rep', onDirtyStateChange, isNew = false, onTagRenamed, onTagDeleted, onConvertToCustomer }) => {
+export interface OpportunityAuditRecord {
+  id: string;
+  eventType: string;
+  changedField: string;
+  oldValue: string;
+  newValue: string;
+  changedBy: string;
+  changedOn: string;
+  opportunityId: string;
+  opportunityName: string;
+}
+
+export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allProposals, onBack, onSave, onNavigateToProspect, onDelete, currentRole = 'Sales Rep', onDirtyStateChange, isNew = false, onTagRenamed, onTagDeleted, onConvertToCustomer, onCreateRenewal }) => {
 
   // Helper: is this product configured (Product Configuration module) as
   // "Applied to Individual" + "Is Insurance Product" = No — the one carve-out
@@ -952,6 +968,16 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   const [pendingDelete, setPendingDelete] = useState(false);
   const [pendingArchive, setPendingArchive] = useState(false);
   const { toast, showToast } = useToast();
+
+  // Opportunity-level Audit Logs — global list (like Product Configuration's
+  // audit trail), filtered to this Opportunity when displayed.
+  const [opportunityAudits, setOpportunityAudits] = useState<OpportunityAuditRecord[]>(() => {
+    const saved = localStorage.getItem('pr2_opportunity_audits');
+    return saved ? JSON.parse(saved) : [];
+  });
+  useEffect(() => { localStorage.setItem('pr2_opportunity_audits', JSON.stringify(opportunityAudits)); }, [opportunityAudits]);
+  const [showAuditModal, setShowAuditModal] = useState(false);
+  const currentOpportunityAudits = opportunityAudits.filter(a => a.opportunityId === proposal.id);
 
   // Product File Requirement uploads are available regardless of Edit mode, so they
   // persist immediately too — otherwise a file uploaded outside an explicit "Save
@@ -1517,6 +1543,53 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     const unsavedFields = editableFieldChecks
       .filter(([, draftValue, savedValue]) => JSON.stringify(draftValue) !== JSON.stringify(savedValue))
       .map(([label]) => label);
+
+    // Audit Logs — diff the saved (before) vs updated (after) Proposal directly,
+    // field by field, so every actual change is recorded regardless of which
+    // draft field it came from.
+    const formatAuditValue = (v: unknown): string => {
+      if (v === undefined || v === null || v === '') return '(none)';
+      if (Array.isArray(v)) return v.length ? v.join(', ') : '(none)';
+      return String(v);
+    };
+    const auditFields: [string, keyof Proposal][] = [
+      ['Oppty Name', 'name'],
+      ['Stage', 'stage'],
+      ['Probability', 'probability'],
+      ['Effective Date', 'effectiveDate'],
+      ['Campaign', 'campaign'],
+      ['Company / Individual', 'client'],
+      ['Sales Rep 1', 'salesRep'],
+      ['Sales Rep 1 Split %', 'split1'],
+      ['Sales Rep 2', 'salesRep2'],
+      ['Sales Rep 2 Split %', 'split2'],
+      ['Sales Rep 3', 'salesRep3'],
+      ['Sales Rep 3 Split %', 'split3'],
+      ['Loss Reason', 'lostReason'],
+      ['Tags', 'tags'],
+      ['Remark', 'remarks'],
+      ['Product Item', 'productItem'],
+      ['Product Category', 'productCategory'],
+      ['Detailed Product Item', 'detailedProductItem'],
+    ];
+    const auditTimestamp = new Date().toISOString().slice(0, 10);
+    const newAudits: OpportunityAuditRecord[] = auditFields
+      .filter(([, key]) => formatAuditValue(proposal[key]) !== formatAuditValue(updatedProposal[key]))
+      .map(([label, key], idx) => ({
+        id: `AUD-O-${Date.now()}-${idx}`,
+        eventType: 'Field Update',
+        changedField: label,
+        oldValue: formatAuditValue(proposal[key]),
+        newValue: formatAuditValue(updatedProposal[key]),
+        changedBy: currentRole,
+        changedOn: auditTimestamp,
+        opportunityId: proposal.id,
+        opportunityName: updatedProposal.name,
+      }));
+    if (newAudits.length > 0) {
+      setOpportunityAudits(prev => [...newAudits, ...prev]);
+    }
+
     onSave?.(updatedProposal);
     setEditedOpportunity(prev => ({ ...prev, masterType: savedMasterType }));
     setIsEditMode(false);
@@ -1546,18 +1619,34 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     onBack();
   };
 
+  const logOpportunityStatusAudit = (oldStatus: string, newStatus: string) => {
+    setOpportunityAudits(prev => [{
+      id: `AUD-O-${Date.now()}`,
+      eventType: 'Status Change',
+      changedField: 'Status',
+      oldValue: oldStatus,
+      newValue: newStatus,
+      changedBy: currentRole,
+      changedOn: new Date().toISOString().slice(0, 10),
+      opportunityId: proposal.id,
+      opportunityName: proposal.name,
+    }, ...prev]);
+  };
+
   const handleToggleArchiveOpportunity = () => {
     if (proposal.status !== 'Archived') {
       setPendingArchive(true);
       return;
     }
     onSave?.({ ...proposal, status: 'Active' });
+    logOpportunityStatusAudit('Archived', 'Active');
     showToast('Opportunity activated.');
   };
 
   const confirmArchiveOpportunity = () => {
     setPendingArchive(false);
     onSave?.({ ...proposal, status: 'Archived' });
+    logOpportunityStatusAudit('Active', 'Archived');
     showToast('Opportunity archived.');
   };
 
@@ -1567,6 +1656,55 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   // discarded — same "Leave without saving?" guard as onBack/onNavigateToProspect.
   const handleConvertToCustomerClick = () => {
     guardedNavigate(() => onConvertToCustomer?.(proposal));
+  };
+
+  // Manual renewal for a Customer/Lapsed Customer Prospect that reached 100%
+  // (already saved) — auto-creates next year's renewal Prospect linked back to
+  // this one. Simplified version of ProposalDetailGmi's Convert-to-Policy-gated
+  // renewal flow: this page has no child-proposal/policy pipeline, so it triggers
+  // directly off the Opportunity reaching 100%.
+  const handleRenewClick = () => {
+    const today = new Date().toISOString().split('T')[0];
+    let nextEffectiveDate = proposal.effectiveDate;
+    const parsedDate = new Date(proposal.effectiveDate);
+    if (!isNaN(parsedDate.getTime())) {
+      parsedDate.setFullYear(parsedDate.getFullYear() + 1);
+      nextEffectiveDate = parsedDate.toISOString().split('T')[0];
+    }
+    const entryLevel = RB_PROBABILITY_OPTIONS.find(p => p > 0)!;
+    const renewalId = `P-REN-${Date.now().toString().slice(-6)}`;
+    const renewalProspect: Proposal = {
+      ...proposal,
+      id: renewalId,
+      name: `${editedOpportunity.name} (Renewal)`,
+      stage: 'Draft',
+      probability: entryLevel,
+      businessType: 'Renewal',
+      client: editedOpportunity.company,
+      salesRep: editedOpportunity.salesRep1,
+      productCategory: editedOpportunity.productCategory,
+      productItem: editedOpportunity.productItem,
+      detailedProductItem: editedOpportunity.detailedProductItem,
+      linkedPreviousProspectId: proposal.id,
+      linkedNextProspectId: undefined,
+      effectiveDate: nextEffectiveDate,
+      createdDate: today,
+      lastUpdated: today,
+      stageLastUpdated: today,
+      remarks: `Auto-created renewal from ${proposal.id} upon reaching 100%.`,
+      salesRep1GrossAmount: 0,
+      salesRep1NetAmount: 0,
+      salesRep2GrossAmount: 0,
+      salesRep2NetAmount: 0,
+      salesRep3GrossAmount: 0,
+      salesRep3NetAmount: 0,
+      opptyRejectDate: undefined,
+      opptyRejectFrequency: 0,
+      childProposals: [],
+    };
+    onCreateRenewal?.(renewalProspect);
+    onSave?.({ ...proposal, linkedNextProspectId: renewalId });
+    showToast(`Renewal Prospect "${renewalProspect.name}" (${renewalId}) created, linked back to this Prospect.`);
   };
 
   // Product File Requirements — entirely config-driven (Product Configuration module's
@@ -1649,18 +1787,66 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     <div className="flex flex-col h-full bg-[#fafafa]">
       {/* Shared Header */}
       <div className="px-6 pt-6 mx-auto w-full max-w-7xl">
-        <div className="mb-4">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => guardedNavigate(onBack)}
-              className="p-2 hover:bg-gray-100 rounded-full border border-gray-200 bg-white shadow-sm text-gray-500"
-            >
-              <ArrowLeft size={16} />
-            </button>
-            <span className="text-xs text-gray-400 font-mono">{proposal.id}</span>
+        <div className="mb-4 flex flex-col gap-3">
+          {/* Action bar — Back to List always available; Audit Logs/Archive/Delete/Edit
+              only in view mode, since editing swaps them for the Discard/Save bar below. */}
+          <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-xs flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => guardedNavigate(onBack)}
+                className="px-3 py-1.5 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 font-bold uppercase text-[9px] rounded-lg flex items-center justify-center gap-1 cursor-pointer h-8"
+              >
+                <ChevronLeft size={12} />
+                Back to List
+              </button>
+              <span className="text-xs text-gray-400 font-mono">{proposal.id}</span>
+            </div>
+            {!isEditMode && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAuditModal(true)}
+                  className="px-3 py-1.5 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 font-bold uppercase text-[9px] rounded-lg flex items-center justify-center gap-1 cursor-pointer h-8"
+                >
+                  <Clock size={12} className="text-gray-400" />
+                  Audit Logs
+                </button>
+                <button
+                  type="button"
+                  onClick={handleToggleArchiveOpportunity}
+                  className="px-3 py-1.5 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 font-bold uppercase text-[9px] rounded-lg flex items-center justify-center gap-1 cursor-pointer h-8"
+                >
+                  <Archive size={12} className="text-gray-400" />
+                  {proposal.status === 'Archived' ? 'Activate' : 'Archive'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteOpportunity}
+                  disabled={editedOpportunity.probability === 100 && currentRole !== 'Admin'}
+                  title={editedOpportunity.probability === 100 && currentRole !== 'Admin' ? 'Only Admin can delete a completed (100%) opportunity' : undefined}
+                  className={`px-3 py-1.5 border font-bold uppercase text-[9px] rounded-lg flex items-center justify-center gap-1 h-8 ${
+                    editedOpportunity.probability === 100 && currentRole !== 'Admin'
+                      ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                      : 'bg-red-50 hover:bg-red-100 text-red-600 border-red-200 cursor-pointer'
+                  }`}
+                >
+                  <Trash2 size={12} />
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsEditMode(true)}
+                  className="px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white font-bold uppercase text-[9px] rounded-lg flex items-center justify-center gap-1 cursor-pointer h-8"
+                >
+                  <Edit size={12} />
+                  Edit
+                </button>
+              </div>
+            )}
           </div>
           {linkedProspectBadges && (
-            <div className="mt-2">
+            <div>
               {linkedProspectBadges}
             </div>
           )}
@@ -1677,69 +1863,27 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                 </div>
               )}
 
-              {/* Title + Edit controls */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  {isEditMode ? (
-                    <>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Oppty Name <span className="text-red-500">*</span></label>
-                      <input
-                        type="text"
-                        value={editedOpportunity.name}
-                        onChange={e => setEditedOpportunity({...editedOpportunity, name: e.target.value})}
-                        className="text-xl font-bold text-gray-900 bg-transparent border-b-2 border-orange-300 focus:border-orange-500 outline-none px-0.5 -ml-0.5"
-                      />
-                    </>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <h1 className="text-xl font-bold text-gray-900">{editedOpportunity.name}</h1>
-                      {proposal.status === 'Archived' && (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-gray-200 text-gray-600">Archived</span>
-                      )}
-                    </div>
-                  )}
-                  <p className="text-xs text-gray-500 mt-1">Customer: {editedOpportunity.company} · Primary Owner: {editedOpportunity.salesRep1}</p>
-                </div>
-                <div className="flex gap-2">
-                  {isEditMode ? (
-                    <>
-                      <button onClick={handleCancelEdit} className="px-4 py-2 bg-white hover:bg-gray-50 border border-gray-200 text-gray-600 rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5">
-                        <span>Cancel</span>
-                      </button>
-                      <button onClick={handleSaveOpportunity} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5">
-                        <Save size={14} />
-                        <span>{isNew ? 'Create Opportunity' : 'Save Opportunity'}</span>
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        onClick={handleToggleArchiveOpportunity}
-                        className="px-4 py-2 bg-white hover:bg-gray-50 border border-gray-200 text-gray-600 rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5"
-                      >
-                        <Archive size={14} />
-                        <span>{proposal.status === 'Archived' ? 'Activate' : 'Archive'}</span>
-                      </button>
-                      <button
-                        onClick={handleDeleteOpportunity}
-                        disabled={editedOpportunity.probability === 100 && currentRole !== 'Admin'}
-                        title={editedOpportunity.probability === 100 && currentRole !== 'Admin' ? 'Only Admin can delete a completed (100%) opportunity' : undefined}
-                        className={`px-4 py-2 border rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 ${
-                          editedOpportunity.probability === 100 && currentRole !== 'Admin'
-                            ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
-                            : 'bg-white hover:bg-red-50 border-gray-200 hover:border-red-200 text-red-600'
-                        }`}
-                      >
-                        <Trash2 size={14} />
-                        <span>Delete</span>
-                      </button>
-                      <button onClick={() => setIsEditMode(true)} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5">
-                        <Edit size={14} />
-                        <span>Edit</span>
-                      </button>
-                    </>
-                  )}
-                </div>
+              {/* Title */}
+              <div>
+                {isEditMode ? (
+                  <>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Oppty Name <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={editedOpportunity.name}
+                      onChange={e => setEditedOpportunity({...editedOpportunity, name: e.target.value})}
+                      className="text-xl font-bold text-gray-900 bg-transparent border-b-2 border-orange-300 focus:border-orange-500 outline-none px-0.5 -ml-0.5"
+                    />
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-xl font-bold text-gray-900">{editedOpportunity.name}</h1>
+                    {proposal.status === 'Archived' && (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-gray-200 text-gray-600">Archived</span>
+                    )}
+                  </div>
+                )}
+                <p className="text-xs text-gray-500 mt-1">Customer: {editedOpportunity.company} · Primary Owner: {editedOpportunity.salesRep1}</p>
               </div>
 
               {/* Gross Amount / Probability — most prominent element on the page */}
@@ -1888,6 +2032,18 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                         >
                           <CheckCircle2 size={13} />
                           <span>Convert to Customer</span>
+                        </button>
+                      </div>
+                    )}
+                    {/* Same 100%-saved gate as Convert to Customer, but for an existing Customer/Lapsed Customer instead of a Lead — creates next year's renewal Prospect. Hidden once already renewed. */}
+                    {proposal.probability === 100 && proposal.masterType !== 'Lead' && !proposal.linkedNextProspectId && (
+                      <div className="mt-2">
+                        <button
+                          onClick={handleRenewClick}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5"
+                        >
+                          <CheckCircle2 size={13} />
+                          <span>Renew</span>
                         </button>
                       </div>
                     )}
@@ -2389,6 +2545,29 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
             </div>
         </div>
 
+      {/* Pinned Save bar — replaces the top action bar's Edit while a draft is open. */}
+      {isEditMode && (
+        <div className="sticky bottom-0 z-20 bg-white border-t-2 border-orange-400 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
+          <div className="max-w-7xl mx-auto w-full px-6 py-3 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={handleCancelEdit}
+              className="px-4 py-2 text-gray-600 hover:text-gray-900 font-bold text-xs uppercase tracking-wider"
+            >
+              Discard Changes
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveOpportunity}
+              className="px-5 py-2 bg-gray-900 hover:bg-black text-white rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm flex items-center gap-1.5"
+            >
+              <Save size={14} />
+              {isNew ? 'Create Opportunity' : 'Save'}
+            </button>
+          </div>
+        </div>
+      )}
+
       <ConfirmDialog
         open={pendingLeaveAction != null}
         title="Leave without saving?"
@@ -2489,6 +2668,73 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                 className="px-4 py-1.5 bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 font-bold uppercase text-[9px] rounded-lg cursor-pointer"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Audit Logs Modal — same pattern as Product Configuration's audit ledger. */}
+      {showAuditModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-5xl max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between border-b border-gray-150 px-6 py-4 bg-gray-50">
+              <div className="flex items-center gap-2">
+                <Clock className="text-orange-600" size={16} />
+                <h3 className="text-sm font-black text-gray-900 uppercase">
+                  Opportunity Audit Ledger - {proposal.id}
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowAuditModal(false)}
+                className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 space-y-4 text-xs font-semibold">
+              <div className="overflow-x-auto border border-gray-150 rounded-xl bg-white">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-gray-50 text-gray-500 font-mono text-[9px] uppercase border-b">
+                    <tr>
+                      <th className="px-4 py-2.5">Event Type</th>
+                      <th className="px-4 py-2.5">Changed Field</th>
+                      <th className="px-4 py-2.5">Old Value</th>
+                      <th className="px-4 py-2.5">New Value</th>
+                      <th className="px-4 py-2.5">Changed By</th>
+                      <th className="px-4 py-2.5 text-right">Changed On</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 font-mono text-xs">
+                    {currentOpportunityAudits.map((audit) => (
+                      <tr key={audit.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-gray-800">{audit.eventType}</td>
+                        <td className="px-4 py-3 text-gray-500">{audit.changedField}</td>
+                        <td className="px-4 py-3 text-red-600 max-w-[150px] truncate">{audit.oldValue}</td>
+                        <td className="px-4 py-3 text-green-600 max-w-[150px] truncate">{audit.newValue}</td>
+                        <td className="px-4 py-3 font-sans">{audit.changedBy}</td>
+                        <td className="px-4 py-3 text-right text-gray-400">{audit.changedOn}</td>
+                      </tr>
+                    ))}
+                    {currentOpportunityAudits.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="py-8 text-center text-gray-400 font-sans">
+                          No audit trails found.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-150 px-6 py-4 flex justify-end bg-gray-50">
+              <button
+                type="button"
+                onClick={() => setShowAuditModal(false)}
+                className="px-4 py-2 bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 font-semibold rounded-lg text-xs cursor-pointer"
+              >
+                Close Audit Logs
               </button>
             </div>
           </div>

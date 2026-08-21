@@ -24,7 +24,8 @@ export const MOCK_LEADS: Lead[] = [
     createdDate: '2024-03-20',
     lastUpdated: '2024-03-25',
     industry: 'Technology',
-    parentCompany: 'ABC Group International'
+    parentCompany: 'ABC Group International',
+    numberOfEmployees: 25
   },
   {
     id: 'L-002',
@@ -50,7 +51,8 @@ export const MOCK_LEADS: Lead[] = [
     lastUpdated: '2024-03-28',
     linkedProposalId: 'P-QUAL-001',
     industry: 'Energy',
-    parentCompany: 'XYZ Holdings Group'
+    parentCompany: 'XYZ Holdings Group',
+    numberOfEmployees: 12
   },
   {
     id: 'L-003',
@@ -235,7 +237,8 @@ export const MOCK_PROPOSALS: Proposal[] = [
     lastUpdated: '2024-03-28',
     stageLastUpdated: '2024-03-25',
     owner: 'Sales Rep B',
-    sourceSystem: 'CRM'
+    sourceSystem: 'CRM',
+    linkedNextProspectId: 'P-REN-001'
   },
   {
     id: 'P-WON-001',
@@ -330,6 +333,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
     remarks: 'Renewal for POL-DEMO-002',
     client: 'Company B',
     linkedPreviousPolicyId: 'POL-DEMO-002',
+    linkedPreviousProspectId: 'P2',
     createdDate: '2024-03-01',
     lastUpdated: '2024-03-30',
     stageLastUpdated: '2024-03-25',

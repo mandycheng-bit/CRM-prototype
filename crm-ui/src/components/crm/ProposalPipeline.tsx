@@ -15,18 +15,19 @@ interface ProposalPipelineProps {
   onUpdateProposal?: (proposal: Proposal) => void;
   onDeleteProposal?: (id: string) => void;
   onCreateProspect?: (businessType: 'NB' | 'Renewal') => void;
+  currentRole?: 'Sales Rep' | 'Admin';
 }
 
 type DealsView = 'active' | 'archived';
 
 // Board columns are Oppty Stage (probability), not the raw `stage` field:
-// "Case Lost" = probability 0%, "Expired" = still open (not 0%/100%) but the
+// "Lost" = probability 0%, "Expired" = still open (not 0%/100%) but the
 // Effective Date has already passed, otherwise grouped by probability — a value
 // that doesn't land exactly on one of these thresholds is folded down into
 // the nearest lower one.
 const NB_STAGE_THRESHOLDS = [10, 30, 70, 90, 100];
 const RB_STAGE_THRESHOLDS = [65, 75, 85, 95, 100];
-const CASE_LOST_COLUMN = 'Case Lost';
+const CASE_LOST_COLUMN = 'Lost';
 const EXPIRED_COLUMN = 'Expired';
 
 const isPastEffectiveDate = (p: Proposal) => !!p.effectiveDate && new Date(p.effectiveDate) < new Date();
@@ -146,7 +147,7 @@ const parseCsv = (text: string): string[][] => {
   return rows.filter(r => r.some(cell => cell.trim() !== ''));
 };
 
-const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, proposals, initialBusinessType = 'NB', onImportProposals, onUpdateProposal, onDeleteProposal, onCreateProspect }) => {
+const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, proposals, initialBusinessType = 'NB', onImportProposals, onUpdateProposal, onDeleteProposal, onCreateProspect, currentRole = 'Sales Rep' }) => {
   // Guards action controls (New Prospect, More/Export/Template/Import, row Archive/
   // Delete/Actions menus) while data is loading — true briefly on mount (there's no
   // real backend yet, so this simulates the loading window) and while a CSV import
@@ -472,6 +473,10 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
 
   const handleDeleteProposalRow = (p: Proposal) => {
     setOpenRowMenuId(null);
+    if (p.probability === 100 && currentRole !== 'Admin') {
+      showToast('Only Admin can delete an Opportunity that has reached 100% probability.');
+      return;
+    }
     setPendingDeleteRow(p);
   };
 
@@ -611,7 +616,12 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                                   <Archive size={11} className="text-gray-400" />
                                   {proposal.status === 'Archived' ? 'Activate' : 'Archive'}
                                 </button>
-                                <button onClick={() => handleDeleteProposalRow(proposal)} className="w-full px-3 py-1.5 hover:bg-red-50 text-red-600 text-left flex items-center gap-2">
+                                <button
+                                  onClick={() => handleDeleteProposalRow(proposal)}
+                                  disabled={proposal.probability === 100 && currentRole !== 'Admin'}
+                                  title={proposal.probability === 100 && currentRole !== 'Admin' ? 'Only Admin can delete a completed (100%) opportunity' : undefined}
+                                  className="w-full px-3 py-1.5 hover:bg-red-50 text-red-600 text-left flex items-center gap-2 disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                                >
                                   <Trash2 size={11} />
                                   Delete
                                 </button>
@@ -789,7 +799,9 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
           </button>
           <button
             onClick={() => { handleDeleteProposalRow(listRowMenu.proposal); setListRowMenu(null); }}
-            className="w-full px-3 py-2 hover:bg-red-50 text-red-600 text-left flex items-center gap-2"
+            disabled={listRowMenu.proposal.probability === 100 && currentRole !== 'Admin'}
+            title={listRowMenu.proposal.probability === 100 && currentRole !== 'Admin' ? 'Only Admin can delete a completed (100%) opportunity' : undefined}
+            className="w-full px-3 py-2 hover:bg-red-50 text-red-600 text-left flex items-center gap-2 disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed"
           >
             <Trash2 size={12} />
             Delete

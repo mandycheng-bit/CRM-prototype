@@ -101,6 +101,7 @@ export interface Lead {
   gender?: string; // For Individual type
   industry?: string; // For Company type
   parentCompany?: string; // For Company type
+  numberOfEmployees?: number; // For Company type
 }
 
 export interface Proposal {

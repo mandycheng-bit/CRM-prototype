@@ -117,6 +117,7 @@ export default function App() {
               tags: (p.tags || []).filter(t => t !== name),
             })))}
             onConvertToCustomer={(p) => setConvertingProposal(p)}
+            onCreateRenewal={(renewalProspect) => setProposals(prev => [...prev, renewalProspect])}
           />
         </ErrorBoundary>
       );
@@ -135,6 +136,7 @@ export default function App() {
               setIsNewProspect(true);
               setSelectedProposal(buildBlankProposal(businessType));
             }}
+            currentRole={currentRole}
           />
         </ErrorBoundary>
       );
