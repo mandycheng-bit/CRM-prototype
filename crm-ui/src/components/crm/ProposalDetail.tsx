@@ -2547,8 +2547,8 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
 
       {/* Pinned Save bar — replaces the top action bar's Edit while a draft is open. */}
       {isEditMode && (
-        <div className="sticky bottom-0 z-20 bg-white border-t-2 border-orange-400 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
-          <div className="max-w-7xl mx-auto w-full px-6 py-3 flex items-center justify-end gap-3">
+        <div className="sticky bottom-0 z-20 px-6 pb-4">
+          <div className="max-w-7xl mx-auto w-full bg-white border border-gray-200 border-t-2 border-t-orange-400 rounded-xl shadow-lg px-5 py-3 flex items-center justify-end gap-3">
             <button
               type="button"
               onClick={handleCancelEdit}
