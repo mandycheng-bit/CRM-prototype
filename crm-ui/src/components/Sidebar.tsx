@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Briefcase, Package, Settings, SlidersHorizontal, ChevronDown } from 'lucide-react';
+import { Briefcase, Package, Settings, SlidersHorizontal, ChevronDown, BarChart2 } from 'lucide-react';
 
-export type ModuleId = 'perspective-pipeline' | 'prospect-2027' | 'products' | 'opportunity-config';
+export type ModuleId = 'perspective-pipeline' | 'prospect-2027' | 'benchmark' | 'products' | 'opportunity-config';
 
 interface Props {
   activeModule: ModuleId;
@@ -50,6 +50,17 @@ export default function Sidebar({ activeModule, onModuleChange }: Props) {
           <Briefcase size={16} />
           <span className="flex-1 text-left">Prospect(2027)</span>
           {activeModule === 'prospect-2027' && <div className="absolute right-0 top-0 bottom-0 w-1 bg-orange-500" />}
+        </button>
+
+        <button
+          onClick={() => onModuleChange('benchmark')}
+          className={`w-full flex items-center gap-3 px-6 py-2.5 text-sm transition-colors relative whitespace-nowrap ${
+            activeModule === 'benchmark' ? 'bg-orange-500/10 text-orange-500 font-medium' : 'text-gray-400 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          <BarChart2 size={16} />
+          <span className="flex-1 text-left">Benchmark</span>
+          {activeModule === 'benchmark' && <div className="absolute right-0 top-0 bottom-0 w-1 bg-orange-500" />}
         </button>
 
         <button
