@@ -1600,6 +1600,8 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
         { editedOpportunity, updatedProposal }
       );
       setShowSaveIncompleteError(true);
+    } else if (editedOpportunity.masterType === 'Lapsed Customer' && savedMasterType === 'Customer') {
+      showToast(`Opportunity reached 100% — this customer has been automatically converted back to Customer (was Lapsed Customer).`);
     } else {
       showToast(isNew ? 'Opportunity created.' : 'Opportunity saved.');
     }
@@ -2035,8 +2037,8 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                         </button>
                       </div>
                     )}
-                    {/* Same 100%-saved gate as Convert to Customer, but for an existing Customer/Lapsed Customer instead of a Lead — creates next year's renewal Prospect. Hidden once already renewed. */}
-                    {proposal.probability === 100 && proposal.masterType !== 'Lead' && !proposal.linkedNextProspectId && (
+                    {/* Independent of masterType — Renew can appear alongside Convert to Customer for a 100% Lead. Hidden once already renewed. */}
+                    {proposal.probability === 100 && !proposal.linkedNextProspectId && (
                       <div className="mt-2">
                         <button
                           onClick={handleRenewClick}
