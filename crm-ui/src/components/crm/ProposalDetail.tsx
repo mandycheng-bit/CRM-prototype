@@ -630,6 +630,12 @@ const resolveFallbackGmiProductGroup = (name: string): string => {
 
 const CONFIG_PRODUCTS = CONFIG_PRODUCT_NAMES.map(name => ({
   name,
+  team: resolveProductTeam(name),
+  group: resolveProductCategory(name),
+  // Product Group is an independent, admin-assigned flat list (Product Configuration
+  // module) with no name-based pattern to derive it from — this fallback only applies
+  // before an admin has ever saved anything to pr2_products_list.
+  productGroup: 'Product Group A',
   gmiProductGroup: resolveFallbackGmiProductGroup(name)
 }));
 
@@ -726,9 +732,25 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     return allStages.filter(s => s >= earliestUnmetStage);
   };
 
+  // Helper: this product's Product Team / Product Group / Product Category / GMI
+  // Product Group (Product Configuration module) — the four fields the Product
+  // Information card auto-fills whenever Product Item is selected.
+  const getProductMeta = (productItemName: string) => {
+    try {
+      const saved = localStorage.getItem('pr2_products_list');
+      const products = saved ? stripRemovedProductFields(JSON.parse(saved)) : CONFIG_PRODUCTS;
+      return products.find((p: any) => p.name === productItemName);
+    } catch (e) {
+      return undefined;
+    }
+  };
+
   const initialProductItem = isNew ? proposal.productItem : (proposal.productItem || 'Sample Care Gold');
-  const initialProductTeam = resolveProductTeam(initialProductItem);
-  const initialProductCategory = resolveProductCategory(initialProductItem);
+  const initialProductMeta = getProductMeta(initialProductItem);
+  const initialProductTeam = initialProductMeta?.team || resolveProductTeam(initialProductItem);
+  const initialProductCategory = initialProductMeta?.group || resolveProductCategory(initialProductItem);
+  const initialProductGroup = initialProductMeta?.productGroup || '';
+  const initialGmiProductGroup = initialProductMeta?.gmiProductGroup || resolveFallbackGmiProductGroup(initialProductItem);
 
   // State for Opportunity Page (Commercial)
   const buildInitialOpportunity = () => ({
@@ -747,7 +769,9 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     masterType: proposal.masterType || resolveCompanyMeta(proposal.client || 'DEMO COMPANY CO. LTD.').masterType,
     // Product Info
     productTeam: initialProductTeam,
+    productGroup: initialProductGroup,
     productCategory: initialProductCategory,
+    gmiProductGroup: initialGmiProductGroup,
     productItem: initialProductItem,
     detailedProductItem: proposal.detailedProductItem || '',
     businessType: proposal.businessType === 'Renewal' ? 'Renewal' : 'NB',
@@ -2220,11 +2244,14 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       const stillValid = typeof editedOpportunity.probability === 'number'
                         && !restricted.includes(editedOpportunity.probability)
                         && !uploadBlocked.includes(editedOpportunity.probability);
+                      const selectedMeta = getProductMeta(selectedItem);
                       setEditedOpportunity({
                         ...editedOpportunity,
                         productItem: selectedItem,
-                        productTeam: resolveProductTeam(selectedItem),
-                        productCategory: resolveProductCategory(selectedItem),
+                        productTeam: selectedMeta?.team || resolveProductTeam(selectedItem),
+                        productGroup: selectedMeta?.productGroup || '',
+                        productCategory: selectedMeta?.group || resolveProductCategory(selectedItem),
+                        gmiProductGroup: selectedMeta?.gmiProductGroup || resolveFallbackGmiProductGroup(selectedItem),
                         probability: stillValid ? editedOpportunity.probability : '',
                       });
                     }}
@@ -2237,8 +2264,16 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                   <input type="text" value={editedOpportunity.productTeam} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-semibold outline-none cursor-not-allowed" />
                 </div>
                 <div>
+                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Product Group</label>
+                  <input type="text" value={editedOpportunity.productGroup} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-semibold outline-none cursor-not-allowed" />
+                </div>
+                <div>
                   <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Product Category</label>
                   <input type="text" value={editedOpportunity.productCategory} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-semibold outline-none cursor-not-allowed" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">GMI Product Group</label>
+                  <input type="text" value={editedOpportunity.gmiProductGroup} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-semibold outline-none cursor-not-allowed" />
                 </div>
                 {/* Only surfaces on a renewal prospect that was auto-created by the system (linkedPreviousProspectId) — carries the prior year's detailed product item forward, read-only. */}
                 {proposal.linkedPreviousProspectId && (
