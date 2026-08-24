@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
-  Save, CheckCircle2, RefreshCw,
+  Save, CheckCircle2, RefreshCw, RotateCcw,
   TrendingUp, BarChart2, Users, Building2, DollarSign,
   Calendar, Plus, Trash2,
   XCircle, X, History, Check, Upload, FileUp,
@@ -967,6 +967,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   const [showSaveIncompleteError, setShowSaveIncompleteError] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(false);
   const [pendingArchive, setPendingArchive] = useState(false);
+  const [pendingRevert, setPendingRevert] = useState(false);
   const { toast, showToast } = useToast();
 
   // Product File Requirements — drag-and-drop highlight (keyed by "checkStage|attachmentName")
@@ -1714,6 +1715,27 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     showToast(`Renewal Prospect "${renewalProspect.name}" (${renewalId}) created, linked back to this Prospect.`);
   };
 
+  // Undoes a Renew, from the renewal record's own side: clears the original
+  // source record's linkedNextProspectId (so its Renew button reappears),
+  // then permanently deletes THIS record and navigates back — this record
+  // only exists because of that Renew.
+  const handleRevertClick = () => {
+    setPendingRevert(true);
+  };
+
+  const confirmRevertRenewal = () => {
+    setPendingRevert(false);
+    const sourceProspect = proposal.linkedPreviousProspectId
+      ? allProposals?.find(p => p.id === proposal.linkedPreviousProspectId)
+      : undefined;
+    if (sourceProspect) {
+      onSave?.({ ...sourceProspect, linkedNextProspectId: undefined });
+    }
+    onDelete?.(proposal.id);
+    onBack();
+    showToast('Renewal reverted — this Prospect was deleted.');
+  };
+
   // Product File Requirements — entirely config-driven (Product Configuration module's
   // Document Requirements, separately configured for NB and RB); the only user action
   // here is uploading the required file(s) per row. The underlying productFileRequirements
@@ -1820,7 +1842,6 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                 <ChevronLeft size={12} />
                 Back to List
               </button>
-              <span className="text-xs text-gray-400 font-mono">{proposal.id}</span>
             </div>
             {!isEditMode && (
               <div className="flex items-center gap-2">
@@ -1840,7 +1861,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                   <Archive size={12} className="text-gray-400" />
                   {proposal.status === 'Archived' ? 'Activate' : 'Archive'}
                 </button>
-                {/* Independent of masterType — can appear alongside Convert to Customer (in the Opportunity Information card) for a 100% Lead. Hidden once already renewed. */}
+                {/* Independent of masterType — can appear alongside Convert to Customer (in the Opportunity Information card) for a 100% Lead. */}
                 {proposal.probability === 100 && !proposal.linkedNextProspectId && (
                   <button
                     type="button"
@@ -1849,6 +1870,18 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                   >
                     <RefreshCw size={12} className="text-gray-400" />
                     Renew
+                  </button>
+                )}
+                {/* Shown on the renewal record itself (linkedPreviousProspectId set) — not
+                    on the original source record. Undoes the Renew that created THIS record. */}
+                {proposal.linkedPreviousProspectId && (
+                  <button
+                    type="button"
+                    onClick={handleRevertClick}
+                    className="px-3 py-1.5 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 font-bold uppercase text-[9px] rounded-lg flex items-center justify-center gap-1 cursor-pointer h-8"
+                  >
+                    <RotateCcw size={12} className="text-gray-400" />
+                    Revert
                   </button>
                 )}
                 <button
@@ -1985,7 +2018,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                     <span className="text-xs font-semibold text-gray-700">{getOpptyStatusLabel(proposal)}</span>
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Opportunity Code</label>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">Opportunity ID</label>
                     <span className="text-xs font-mono text-gray-700">{editedOpportunity.opptyOdooId}</span>
                   </div>
                   <div>
@@ -2629,6 +2662,15 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
         confirmLabel="Archive"
         onConfirm={confirmArchiveOpportunity}
         onClose={() => setPendingArchive(false)}
+      />
+      <ConfirmDialog
+        open={pendingRevert}
+        title="Revert this renewal?"
+        message="This permanently deletes this Prospect and lets the original Opportunity be renewed again. This cannot be undone."
+        confirmLabel="Revert"
+        confirmVariant="danger"
+        onConfirm={confirmRevertRenewal}
+        onClose={() => setPendingRevert(false)}
       />
       <ErrorDialog
         open={showSaveIncompleteError}
