@@ -2293,7 +2293,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
               </h3>
               <div className="text-xs">
                 <div className="max-w-xs mb-4">
-                  <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Sales Team (Primary Owner)</label>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Sales Team (Primary)</label>
                   <input type="text" value={SALES_REP_TEAM_MAP[editedOpportunity.salesRep1] || 'Unassigned'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-semibold outline-none cursor-not-allowed" />
                 </div>
                 <div>
@@ -2383,7 +2383,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       {(isEditMode ? numSalesReps >= 3 : !!editedOpportunity.salesRep3) && (
                         <tr>
                           <td className="p-2 text-center">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-gray-100 text-gray-600 border border-gray-200">Secondary</span>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-gray-100 text-gray-600 border border-gray-200">Third</span>
                           </td>
                           <td className="p-2">
                             {isEditMode ? (
