@@ -13,6 +13,9 @@ interface CustomerCreationSimProps {
 const REGIONS = ['Hong Kong', 'Macau'];
 const MAX_SALES_REPS = 3;
 
+// Company gets all four categories; Individual only ever shows Lead (Part 2, TASK-14).
+type SalesRepCategory = 'Insurance' | 'Pension' | 'Project' | 'Lead';
+
 // Region codes as stored on a Lead record don't line up 1:1 with the real
 // target system's Region field (Hong Kong / Macau only, per PRD-Leads &
 // Customers Part1) — map what we can, leave the rest for the Rep to pick.
@@ -56,28 +59,35 @@ export const CustomerCreationSim: React.FC<CustomerCreationSimProps> = ({ propos
   const [phone, setPhone] = useState(matchedLead?.phone || '');
   const [mobile, setMobile] = useState('');
 
-  // Sales Rep — pre-filled from the source Opportunity's own Sales Assignment (Part 2, TASK-6)
-  const [salesReps, setSalesReps] = useState<string[]>(
-    [proposal.salesRep, proposal.salesRep2, proposal.salesRep3].filter((r): r is string => !!r).slice(0, MAX_SALES_REPS)
-  );
-  const [repToAdd, setRepToAdd] = useState('');
+  // Sales Rep, per category — Company gets Insurance/Pension/Project (optional)
+  // plus Lead (required); Individual only ever shows Lead. The same rep can
+  // appear in more than one category (e.g. also the Insurance rep). Lead
+  // starts pre-filled from the source Opportunity's own Sales Assignment
+  // (Part 2, TASK-7) since that's the assignment already driving this
+  // conversion; the other categories start empty.
+  const categories: SalesRepCategory[] = isCompany ? ['Insurance', 'Pension', 'Project', 'Lead'] : ['Lead'];
+  const [repsByCategory, setRepsByCategory] = useState<Record<SalesRepCategory, string[]>>({
+    Insurance: [],
+    Pension: [],
+    Project: [],
+    Lead: [proposal.salesRep, proposal.salesRep2, proposal.salesRep3].filter((r): r is string => !!r).slice(0, MAX_SALES_REPS),
+  });
+  const [repToAdd, setRepToAdd] = useState<Record<SalesRepCategory, string>>({ Insurance: '', Pension: '', Project: '', Lead: '' });
   const [error, setError] = useState('');
 
-  const addSalesRep = () => {
-    if (!repToAdd || salesReps.includes(repToAdd) || salesReps.length >= MAX_SALES_REPS) return;
-    setSalesReps(prev => [...prev, repToAdd]);
-    setRepToAdd('');
+  const addSalesRep = (category: SalesRepCategory) => {
+    const rep = repToAdd[category];
+    if (!rep || repsByCategory[category].includes(rep) || repsByCategory[category].length >= MAX_SALES_REPS) return;
+    setRepsByCategory(prev => ({ ...prev, [category]: [...prev[category], rep] }));
+    setRepToAdd(prev => ({ ...prev, [category]: '' }));
   };
 
-  const removeSalesRep = (rep: string) => {
-    setSalesReps(prev => prev.filter(r => r !== rep));
+  const removeSalesRep = (category: SalesRepCategory, rep: string) => {
+    setRepsByCategory(prev => ({ ...prev, [category]: prev[category].filter(r => r !== rep) }));
   };
-
-  const roleLabel = isCompany ? 'Lead Sales Rep' : 'Individual Sales Rep';
-  const availableReps = SALES_REPS.filter(r => !salesReps.includes(r));
 
   const validate = (): string => {
-    if (salesReps.length === 0) return `Select at least one ${roleLabel}.`;
+    if (repsByCategory.Lead.length === 0) return `Select at least one ${isCompany ? 'Lead' : 'Individual'} Sales Rep.`;
     if (isCompany) {
       if (!companyName.trim()) return 'Name is required.';
       if (!companyRegion) return 'Region is required.';
@@ -198,46 +208,58 @@ export const CustomerCreationSim: React.FC<CustomerCreationSimProps> = ({ propos
           )}
 
           <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider border-b border-gray-100 pb-1.5 pt-2">
-            {roleLabel}<span className="text-red-500">*</span>
+            Sales Rep Assignment
           </h3>
 
-          <div className="space-y-2">
-            {salesReps.map(rep => (
-              <div key={rep} className="border border-gray-200 rounded-lg px-4 py-2.5 flex items-center justify-between">
-                <div>
-                  <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">{isCompany ? 'Lead' : 'Individual'}</div>
-                  <div className="text-sm font-bold text-gray-900">{rep}</div>
+          <div className="space-y-3">
+            {categories.map(category => {
+              const reps = repsByCategory[category];
+              const otherReps = SALES_REPS.filter(r => !reps.includes(r));
+              const categoryLabel = category === 'Lead' && !isCompany ? 'Individual' : category;
+              return (
+                <div key={category} className="border border-gray-200 rounded-lg p-4">
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">
+                    {categoryLabel}{category === 'Lead' && <span className="text-red-500">*</span>}
+                  </div>
+                  {reps.length === 0 ? (
+                    <div className="text-xs text-gray-400 italic mb-2">No sales rep assigned yet.</div>
+                  ) : (
+                    <div className="space-y-2 mb-2">
+                      {reps.map(rep => (
+                        <div key={rep} className="flex items-center justify-between">
+                          <span className="text-sm font-bold text-gray-900">{rep}</span>
+                          <div className="flex items-center gap-2">
+                            <Star size={16} className="text-amber-500 fill-amber-500" />
+                            <button type="button" onClick={() => removeSalesRep(category, rep)} className="text-red-500 hover:text-red-700">
+                              <X size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {reps.length < MAX_SALES_REPS && (
+                    <div className="flex items-end gap-2">
+                      <div className="flex-1">
+                        <select value={repToAdd[category]} onChange={e => setRepToAdd(prev => ({ ...prev, [category]: e.target.value }))} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-semibold">
+                          <option value="">Sales Rep</option>
+                          {otherReps.map(r => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => addSalesRep(category)}
+                        disabled={!repToAdd[category]}
+                        className="px-4 py-1.5 bg-white border border-gray-200 rounded text-xs font-bold text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <Star size={16} className="text-amber-500 fill-amber-500" />
-                  <button type="button" onClick={() => removeSalesRep(rep)} className="text-red-500 hover:text-red-700">
-                    <X size={16} />
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
-
-          {salesReps.length < MAX_SALES_REPS && (
-            <div className="flex items-end gap-2">
-              <div className="flex-1">
-                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Sales Rep</label>
-                <select value={repToAdd} onChange={e => setRepToAdd(e.target.value)} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-semibold">
-                  <option value="">Please Select</option>
-                  {availableReps.map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
-              </div>
-              <button
-                type="button"
-                onClick={addSalesRep}
-                disabled={!repToAdd}
-                className="px-4 py-1.5 bg-white border border-gray-200 rounded text-xs font-bold text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50"
-              >
-                Add
-              </button>
-            </div>
-          )}
-          <div className="text-[10px] text-gray-400">Select 1–{MAX_SALES_REPS} ({salesReps.length} selected)</div>
         </div>
       </div>
     </div>

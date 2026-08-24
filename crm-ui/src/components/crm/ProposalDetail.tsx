@@ -42,6 +42,13 @@ export const resolveCompanyMeta = (label: string) => {
     ? { entityType: match.entityType, source: match.source, masterType: match.masterType }
     : { entityType: 'Company' as const, source: 'Customer' as const, masterType: 'Customer' as MasterType };
 };
+// The Company/Individual toggle's second row is a 3-way UI concept (Customer /
+// Lead / Lapsed) layered on top of the 2-way `source` field the data actually
+// carries — a Lapsed entity's own `source` is still 'Customer', distinguished
+// only by masterType. This maps a resolved entity's source+masterType to
+// whichever of the three toggle buttons should show as active for it.
+const resolveUiSource = (meta: { source: 'Customer' | 'Lead'; masterType: MasterType }): 'Customer' | 'Lead' | 'Lapsed' =>
+  meta.masterType === 'Lapsed Customer' ? 'Lapsed' : meta.source;
 const CAMPAIGN_OPTIONS = MOCK_CAMPAIGNS.filter(c => c.active).map(c => c.name);
 
 // "Member First Name"/"Member Last Name" were removed from Product Configuration's
@@ -918,21 +925,23 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   // handled inline by the SearchableDropdown itself.
   const initialCompanyMeta = resolveCompanyMeta(proposal.client || 'DEMO COMPANY CO. LTD.');
   const [companyEntityType, setCompanyEntityType] = useState<'Company' | 'Individual'>(initialCompanyMeta.entityType);
-  const [companySource, setCompanySource] = useState<'Customer' | 'Lead'>(initialCompanyMeta.source);
+  const [companySource, setCompanySource] = useState<'Customer' | 'Lead' | 'Lapsed'>(resolveUiSource(initialCompanyMeta));
   const filteredCompanyOptions = COMPANY_INDIVIDUAL_OPTIONS.filter(o =>
-    o.entityType === companyEntityType && o.source === companySource
+    o.entityType === companyEntityType &&
+    (companySource === 'Lapsed' ? o.masterType === 'Lapsed Customer' : o.source === companySource && o.masterType !== 'Lapsed Customer')
   );
+  const masterTypeForSource = (t: 'Customer' | 'Lead' | 'Lapsed'): MasterType => t === 'Lead' ? 'Lead' : t === 'Lapsed' ? 'Lapsed Customer' : 'Customer';
 
   // Switching either toggle clears the current pick rather than auto-selecting
   // the first matching option — the user must explicitly re-choose from the
   // SearchableDropdown, which then shows its "Please Select" placeholder.
   const handleToggleCompanyEntityType = (t: 'Company' | 'Individual') => {
     setCompanyEntityType(t);
-    setEditedOpportunity(prev => ({ ...prev, company: '', masterType: companySource === 'Lead' ? 'Lead' : 'Customer' }));
+    setEditedOpportunity(prev => ({ ...prev, company: '', masterType: masterTypeForSource(companySource) }));
   };
-  const handleToggleCompanySource = (t: 'Customer' | 'Lead') => {
+  const handleToggleCompanySource = (t: 'Customer' | 'Lead' | 'Lapsed') => {
     setCompanySource(t);
-    setEditedOpportunity(prev => ({ ...prev, company: '', masterType: t === 'Lead' ? 'Lead' : 'Customer' }));
+    setEditedOpportunity(prev => ({ ...prev, company: '', masterType: masterTypeForSource(t) }));
   };
 
   const handleCancelEdit = () => {
@@ -946,7 +955,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     setNumSalesReps(1);
     const meta = resolveCompanyMeta(proposal.client || 'DEMO COMPANY CO. LTD.');
     setCompanyEntityType(meta.entityType);
-    setCompanySource(meta.source);
+    setCompanySource(resolveUiSource(meta));
     setIsEditMode(false);
     setValidationError(null);
   };
@@ -1504,14 +1513,13 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     setValidationError(null);
 
     // Master Type conversion is only committed once a 100% probability is actually
-    // saved — not while the value is still being edited in the draft.
+    // saved — not while the value is still being edited in the draft. A Lapsed
+    // entity no longer auto-flips here; it goes through the same Convert to
+    // Customer flow as a Lead (TASK-14) since assigning it a Lead Sales Rep is
+    // what actually resolves its Lapsed status.
     let savedMasterType = editedOpportunity.masterType;
-    if (currentProbability === 100) {
-      if (editedOpportunity.masterType === 'Lapsed Customer') {
-        savedMasterType = 'Customer';
-      } else if (editedOpportunity.masterType === 'Lead' && isNonInsuranceIndividualProduct(editedOpportunity.productItem)) {
-        savedMasterType = 'Customer';
-      }
+    if (currentProbability === 100 && editedOpportunity.masterType === 'Lead' && isNonInsuranceIndividualProduct(editedOpportunity.productItem)) {
+      savedMasterType = 'Customer';
     }
     const updatedProposal: Proposal = {
       ...proposal,
@@ -1630,8 +1638,6 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
         { editedOpportunity, updatedProposal }
       );
       setShowSaveIncompleteError(true);
-    } else if (editedOpportunity.masterType === 'Lapsed Customer' && savedMasterType === 'Customer') {
-      showToast(`Opportunity reached 100% — this customer has been automatically converted back to Customer (was Lapsed Customer).`);
     } else {
       showToast(isNew ? 'Opportunity created.' : 'Opportunity saved.');
     }
@@ -2078,7 +2084,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                             ))}
                           </div>
                           <div className="flex bg-gray-100 rounded-lg p-1">
-                            {(['Customer', 'Lead'] as const).map(t => (
+                            {(['Customer', 'Lead', 'Lapsed'] as const).map(t => (
                               <button key={t} onClick={() => handleToggleCompanySource(t)} className={`px-3 py-1 text-xs font-semibold rounded transition-all ${companySource === t ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>{t}</button>
                             ))}
                           </div>
@@ -2112,7 +2118,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       </div>
                     )}
                     {/* Only surfaces after a 100% probability has actually been saved — not while still being edited in the draft */}
-                    {proposal.probability === 100 && proposal.masterType === 'Lead' && (
+                    {proposal.probability === 100 && (proposal.masterType === 'Lead' || proposal.masterType === 'Lapsed Customer') && (
                       <div className="mt-2">
                         <button
                           onClick={handleConvertToCustomerClick}
