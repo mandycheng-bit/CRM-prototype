@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
-  Save, CheckCircle2,
+  Save, CheckCircle2, RefreshCw,
   TrendingUp, BarChart2, Users, Building2, DollarSign,
   Calendar, Plus, Trash2,
   XCircle, X, History, Check, Upload, FileUp,
@@ -969,6 +969,11 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   const [pendingArchive, setPendingArchive] = useState(false);
   const { toast, showToast } = useToast();
 
+  // Product File Requirements — drag-and-drop highlight (keyed by "checkStage|attachmentName")
+  // and the currently enlarged image preview, if any.
+  const [dragOverRequirementKey, setDragOverRequirementKey] = useState<string | null>(null);
+  const [previewImageFile, setPreviewImageFile] = useState<UploadedRequirementFile | null>(null);
+
   // Opportunity-level Audit Logs — global list (like Product Configuration's
   // audit trail), filtered to this Opportunity when displayed.
   const [opportunityAudits, setOpportunityAudits] = useState<OpportunityAuditRecord[]>(() => {
@@ -1713,17 +1718,30 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   // Document Requirements, separately configured for NB and RB); the only user action
   // here is uploading the required file(s) per row. The underlying productFileRequirements
   // row is found-or-created on first upload, then files are appended to it.
-  const filesFromFileList = (fileList: FileList): UploadedRequirementFile[] => {
+  // Reads image files as a data URL for inline preview (lucide-free thumbnails);
+  // other file types keep metadata-only, same as before.
+  const filesFromFileList = (fileList: FileList | File[]): Promise<UploadedRequirementFile[]> => {
     const today = new Date().toISOString().split('T')[0];
-    return Array.from(fileList).map((file, i) => ({
-      id: `FILE-${Date.now()}-${i}`,
-      name: file.name,
-      size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
-      uploadedDate: today,
-    }));
+    return Promise.all(Array.from(fileList).map((file, i) => new Promise<UploadedRequirementFile>(resolve => {
+      const base: UploadedRequirementFile = {
+        id: `FILE-${Date.now()}-${i}`,
+        name: file.name,
+        size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
+        uploadedDate: today,
+        mimeType: file.type,
+      };
+      if (!file.type.startsWith('image/')) {
+        resolve(base);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => resolve({ ...base, dataUrl: reader.result as string });
+      reader.onerror = () => resolve(base);
+      reader.readAsDataURL(file);
+    })));
   };
-  const addFilesToConfigRequirement = (checkStage: string, attachmentName: string, fileType: 'Compulsory' | 'Optional', docId: string, fileList: FileList) => {
-    const newFiles = filesFromFileList(fileList);
+  const addFilesToConfigRequirement = async (checkStage: string, attachmentName: string, fileType: 'Compulsory' | 'Optional', docId: string, fileList: FileList | File[]) => {
+    const newFiles = await filesFromFileList(fileList);
     setEditedOpportunity(prev => {
       const idx = prev.productFileRequirements.findIndex(f =>
         f.relatedProductItem === prev.productItem && f.checkStage === checkStage && f.name === attachmentName
@@ -1822,6 +1840,17 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                   <Archive size={12} className="text-gray-400" />
                   {proposal.status === 'Archived' ? 'Activate' : 'Archive'}
                 </button>
+                {/* Independent of masterType — can appear alongside Convert to Customer (in the Opportunity Information card) for a 100% Lead. Hidden once already renewed. */}
+                {proposal.probability === 100 && !proposal.linkedNextProspectId && (
+                  <button
+                    type="button"
+                    onClick={handleRenewClick}
+                    className="px-3 py-1.5 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 font-bold uppercase text-[9px] rounded-lg flex items-center justify-center gap-1 cursor-pointer h-8"
+                  >
+                    <RefreshCw size={12} className="text-gray-400" />
+                    Renew
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleDeleteOpportunity}
@@ -2034,18 +2063,6 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                         >
                           <CheckCircle2 size={13} />
                           <span>Convert to Customer</span>
-                        </button>
-                      </div>
-                    )}
-                    {/* Independent of masterType — Renew can appear alongside Convert to Customer for a 100% Lead. Hidden once already renewed. */}
-                    {proposal.probability === 100 && !proposal.linkedNextProspectId && (
-                      <div className="mt-2">
-                        <button
-                          onClick={handleRenewClick}
-                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5"
-                        >
-                          <CheckCircle2 size={13} />
-                          <span>Renew</span>
                         </button>
                       </div>
                     )}
@@ -2507,28 +2524,51 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                                 <span className="text-gray-700 font-mono">{checkStage}</span>
                               </td>
                               <td className="py-2 pr-3 min-w-[160px]">
-                                <div className="flex flex-col gap-1">
-                                  {(uploaded?.files || []).map(f => (
-                                    <div key={f.id} className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded px-1.5 py-1 text-[11px]">
-                                      <FileUp size={10} className="text-gray-400 shrink-0" />
-                                      <span className="truncate max-w-[100px] text-gray-700" title={f.name}>{f.name}</span>
-                                      <span className="text-gray-400 shrink-0">({f.size})</span>
-                                      <button type="button" onClick={() => removeFileFromConfigRequirement(checkStage, row.attachmentName, f.id)} className="ml-auto text-gray-400 hover:text-red-600 shrink-0">
-                                        <X size={10} />
-                                      </button>
-                                    </div>
-                                  ))}
-                                  <label className="inline-flex items-center gap-1 text-[11px] text-orange-600 hover:text-orange-700 cursor-pointer font-semibold">
-                                    <Plus size={11} />
-                                    <span>Add File</span>
-                                    <input type="file" multiple className="hidden" onChange={e => {
-                                      if (e.target.files && e.target.files.length > 0) {
-                                        addFilesToConfigRequirement(checkStage, row.attachmentName, row.fileType, uploaded?.id || `DOC-${row.id}`, e.target.files);
+                                {(() => {
+                                  const requirementKey = `${checkStage}|${row.attachmentName}`;
+                                  const isDragOver = dragOverRequirementKey === requirementKey;
+                                  return (
+                                  <div
+                                    className={`flex flex-col gap-1 rounded p-1 border border-dashed transition-colors ${isDragOver ? 'border-orange-400 bg-orange-50' : 'border-transparent'}`}
+                                    onDragOver={e => { e.preventDefault(); setDragOverRequirementKey(requirementKey); }}
+                                    onDragLeave={() => setDragOverRequirementKey(prev => prev === requirementKey ? null : prev)}
+                                    onDrop={e => {
+                                      e.preventDefault();
+                                      setDragOverRequirementKey(null);
+                                      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                                        addFilesToConfigRequirement(checkStage, row.attachmentName, row.fileType, uploaded?.id || `DOC-${row.id}`, e.dataTransfer.files);
                                       }
-                                      e.target.value = '';
-                                    }} />
-                                  </label>
-                                </div>
+                                    }}
+                                  >
+                                    {(uploaded?.files || []).map(f => (
+                                      <div key={f.id} className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded px-1.5 py-1 text-[11px]">
+                                        {f.dataUrl ? (
+                                          <button type="button" onClick={() => setPreviewImageFile(f)} className="shrink-0">
+                                            <img src={f.dataUrl} alt={f.name} className="w-6 h-6 object-cover rounded border border-gray-200" />
+                                          </button>
+                                        ) : (
+                                          <FileUp size={10} className="text-gray-400 shrink-0" />
+                                        )}
+                                        <span className="truncate max-w-[100px] text-gray-700" title={f.name}>{f.name}</span>
+                                        <span className="text-gray-400 shrink-0">({f.size})</span>
+                                        <button type="button" onClick={() => removeFileFromConfigRequirement(checkStage, row.attachmentName, f.id)} className="ml-auto text-gray-400 hover:text-red-600 shrink-0">
+                                          <X size={10} />
+                                        </button>
+                                      </div>
+                                    ))}
+                                    <label className="inline-flex items-center gap-1 text-[11px] text-orange-600 hover:text-orange-700 cursor-pointer font-semibold">
+                                      <Plus size={11} />
+                                      <span>{isDragOver ? 'Drop to upload' : 'Add File (or drag & drop)'}</span>
+                                      <input type="file" multiple className="hidden" onChange={e => {
+                                        if (e.target.files && e.target.files.length > 0) {
+                                          addFilesToConfigRequirement(checkStage, row.attachmentName, row.fileType, uploaded?.id || `DOC-${row.id}`, e.target.files);
+                                        }
+                                        e.target.value = '';
+                                      }} />
+                                    </label>
+                                  </div>
+                                  );
+                                })()}
                               </td>
                             </tr>
                           );
@@ -2739,6 +2779,19 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                 Close Audit Logs
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {previewImageFile && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={() => setPreviewImageFile(null)}>
+          <div className="max-w-3xl max-h-[85vh] p-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-white text-xs font-semibold truncate">{previewImageFile.name}</span>
+              <button type="button" onClick={() => setPreviewImageFile(null)} className="text-white hover:text-gray-300 ml-4">
+                <X size={18} />
+              </button>
+            </div>
+            <img src={previewImageFile.dataUrl} alt={previewImageFile.name} className="max-w-full max-h-[75vh] rounded-lg object-contain" />
           </div>
         </div>
       )}

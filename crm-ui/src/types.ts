@@ -329,6 +329,8 @@ export interface UploadedRequirementFile {
   name: string;
   size: string;
   uploadedDate: string;
+  mimeType?: string;
+  dataUrl?: string; // only populated for image/* files, for inline preview
 }
 
 export interface ProductFileRequirement {
