@@ -1208,7 +1208,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
   };
 
   const handleSaveAllSettings = () => {
-    const errors: { name?: string; team?: string; group?: string; gmiProductGroup?: string; salesCreditRule?: string; isInsuranceProduct?: string } = {};
+    const errors: { name?: string; team?: string; productGroup?: string; group?: string; gmiProductGroup?: string; salesCreditRule?: string; isInsuranceProduct?: string } = {};
     if (!detailName.trim()) {
       errors.name = 'Product Item is required.';
     } else {

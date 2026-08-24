@@ -2067,10 +2067,6 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       </div>
                     )}
                   </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Oppty Stage</label>
-                    <input type="text" value={editedOpportunity.stage} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 bg-gray-100 rounded text-xs text-gray-500 font-semibold outline-none cursor-not-allowed" />
-                  </div>
                   <FieldView label="Campaign" required editing={isEditMode} viewValue={editedOpportunity.campaign}>
                     <SearchableDropdown
                       value={editedOpportunity.campaign}
@@ -2080,11 +2076,9 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       buttonPlaceholder="Please Select Campaign"
                     />
                   </FieldView>
-                  {['Draft', 'Finalize', 'Policy'].includes(editedOpportunity.stage) && (
-                    <FieldView label="Effective Date" editing={isEditMode} viewValue={editedOpportunity.effectiveDate1 || '—'}>
-                      <input type="date" min="1900-01-01" max="2100-12-31" value={editedOpportunity.effectiveDate1} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate1: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
-                    </FieldView>
-                  )}
+                  <FieldView label="Effective Date" editing={isEditMode} viewValue={editedOpportunity.effectiveDate1 || '—'}>
+                    <input type="date" min="1900-01-01" max="2100-12-31" value={editedOpportunity.effectiveDate1} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate1: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
+                  </FieldView>
                   <div className="md:col-span-3">
                     <div className="flex items-center gap-2 mb-1">
                       <label className="text-[10px] font-black uppercase text-gray-400 block">Tags</label>
