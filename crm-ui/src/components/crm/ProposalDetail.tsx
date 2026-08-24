@@ -2247,8 +2247,8 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                     </thead>
                     <tbody className="divide-y font-semibold">
                       <tr>
-                        <td className="p-2">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-orange-50 text-orange-700 border border-orange-200">Primary Owner</span>
+                        <td className="p-2 text-center">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-orange-50 text-orange-700 border border-orange-200">Primary</span>
                         </td>
                         <td className="p-2">
                           {isEditMode ? (
@@ -2280,7 +2280,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       </tr>
                       {(isEditMode ? numSalesReps >= 2 : !!editedOpportunity.salesRep2) && (
                         <tr>
-                          <td className="p-2">
+                          <td className="p-2 text-center">
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-gray-100 text-gray-600 border border-gray-200">Secondary</span>
                           </td>
                           <td className="p-2">
@@ -2320,7 +2320,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       )}
                       {(isEditMode ? numSalesReps >= 3 : !!editedOpportunity.salesRep3) && (
                         <tr>
-                          <td className="p-2">
+                          <td className="p-2 text-center">
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-gray-100 text-gray-600 border border-gray-200">Secondary</span>
                           </td>
                           <td className="p-2">
