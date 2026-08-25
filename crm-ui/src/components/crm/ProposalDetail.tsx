@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
-  Save, CheckCircle2, RefreshCw, RotateCcw,
+  Save, CheckCircle2, RefreshCw,
   TrendingUp, BarChart2, Users, Building2, DollarSign,
   Calendar, Plus, Trash2,
   XCircle, X, History, Check, Upload, FileUp,
@@ -649,8 +649,9 @@ const CONFIG_PRODUCTS = CONFIG_PRODUCT_NAMES.map(name => ({
 // Same rules as the Pipeline board's column derivation (getOpptyStageColumn /
 // isPastEffectiveDate in ProposalPipeline.tsx) — reused here so the read-only
 // Opportunity Status shown on this page never disagrees with the board.
-// `stage`/`probability` are independent fields: 0% probability alone does not
-// mean Lost — only an explicit stage of 'Lost' does.
+// `stage` is kept in sync with `probability` for the 0% case by the
+// Probability dropdown's onChange handler below (Loss Reason flow), so
+// checking `stage === 'Lost'` here still reflects Probability = 0%.
 const isPastEffectiveDate = (p: Proposal) => !!p.effectiveDate && new Date(p.effectiveDate) < new Date();
 const getOpptyStatusLabel = (p: Proposal): string => {
   if (p.stage === 'Lost') return 'Lost';
@@ -823,7 +824,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   useEffect(() => {
     if (!isNew) return;
     if (editedOpportunity.probability !== 0) return;
-    const entryLevel = (editedOpportunity.businessType === 'Renewal' ? RB_PROBABILITY_OPTIONS : NB_PROBABILITY_OPTIONS).find(p => p > 0)!;
+    const entryLevel = editedOpportunity.businessType === 'Renewal' ? 75 : NB_PROBABILITY_OPTIONS.find(p => p > 0)!;
     setEditedOpportunity(prev => ({ ...prev, probability: entryLevel }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1648,6 +1649,13 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       setValidationError('Only Admin can delete an Opportunity that has reached 100% probability.');
       return;
     }
+    // A renewal record (has linkedPreviousProspectId) has no separate Revert
+    // button — Delete branches to the Revert confirm/behavior instead, subject
+    // to the same Admin/100% gate as a standard delete, checked above.
+    if (proposal.linkedPreviousProspectId) {
+      setPendingRevert(true);
+      return;
+    }
     setPendingDelete(true);
   };
 
@@ -1709,7 +1717,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       parsedDate.setFullYear(parsedDate.getFullYear() + 1);
       nextEffectiveDate = parsedDate.toISOString().split('T')[0];
     }
-    const entryLevel = RB_PROBABILITY_OPTIONS.find(p => p > 0)!;
+    const entryLevel = 75; // Renewal entry level — matches "+ New Prospect"'s blank-record default (App.tsx)
     const renewalId = `P-REN-${Date.now().toString().slice(-6)}`;
     const renewalProspect: Proposal = {
       ...proposal,
@@ -1748,11 +1756,8 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   // Undoes a Renew, from the renewal record's own side: clears the original
   // source record's linkedNextProspectId (so its Renew button reappears),
   // then permanently deletes THIS record and navigates back — this record
-  // only exists because of that Renew.
-  const handleRevertClick = () => {
-    setPendingRevert(true);
-  };
-
+  // only exists because of that Renew. Triggered via handleDeleteOpportunity's
+  // branch above, not a separate button.
   const confirmRevertRenewal = () => {
     setPendingRevert(false);
     const sourceProspect = proposal.linkedPreviousProspectId
@@ -1902,18 +1907,9 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                     Renew
                   </button>
                 )}
-                {/* Shown on the renewal record itself (linkedPreviousProspectId set) — not
-                    on the original source record. Undoes the Renew that created THIS record. */}
-                {proposal.linkedPreviousProspectId && (
-                  <button
-                    type="button"
-                    onClick={handleRevertClick}
-                    className="px-3 py-1.5 bg-white hover:bg-gray-50 border border-gray-300 text-gray-700 font-bold uppercase text-[9px] rounded-lg flex items-center justify-center gap-1 cursor-pointer h-8"
-                  >
-                    <RotateCcw size={12} className="text-gray-400" />
-                    Revert
-                  </button>
-                )}
+                {/* No separate Revert button — a renewal record (linkedPreviousProspectId
+                    set) has its Delete button below branch to Revert behavior instead,
+                    gated by the same Admin/100% rule (see handleDeleteOpportunity). */}
                 <button
                   type="button"
                   onClick={handleDeleteOpportunity}
@@ -1993,7 +1989,16 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                     {isEditMode ? (
                       <select
                         value={editedOpportunity.probability}
-                        onChange={e => setEditedOpportunity({...editedOpportunity, probability: e.target.value === '' ? '' : Number(e.target.value)})}
+                        onChange={e => {
+                          const nextProbability = e.target.value === '' ? '' : Number(e.target.value);
+                          setEditedOpportunity(prev => ({
+                            ...prev,
+                            probability: nextProbability,
+                            // Setting Probability to 0% (Loss Reason flow) syncs stage to
+                            // 'Lost'; moving away from 0% clears it back off 'Lost'.
+                            stage: nextProbability === 0 ? 'Lost' : (prev.stage === 'Lost' ? 'Draft' : prev.stage),
+                          }));
+                        }}
                         className="text-2xl font-black text-gray-900 bg-transparent border-b-2 border-orange-300 focus:border-orange-500 outline-none"
                       >
                         {(() => {
@@ -2360,22 +2365,18 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                             ) : <span>{editedOpportunity.salesRep2}</span>}
                           </td>
                           <td className="p-2">{isEditMode ? (
-                            numSalesReps === 2 ? (
-                              <input type="text" value={editedOpportunity.split2} readOnly title="Auto-calculated to complete 100%" className="w-full p-1 border border-gray-100 bg-gray-100 rounded text-xs text-right font-mono text-gray-500 cursor-not-allowed" />
-                            ) : (
-                              <input
-                                type="number"
-                                min={0}
-                                max={100}
-                                step={1}
-                                value={editedOpportunity.split2}
-                                onChange={e => handleSplit2Change(Number(e.target.value))}
-                                onFocus={e => e.currentTarget.select()}
-                                onKeyDown={blockNonIntegerKeys}
-                                onWheel={blurOnWheel}
-                                className="w-full p-1 border border-gray-200 rounded text-xs text-right font-mono"
-                              />
-                            )
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              step={1}
+                              value={editedOpportunity.split2}
+                              onChange={e => handleSplit2Change(Number(e.target.value))}
+                              onFocus={e => e.currentTarget.select()}
+                              onKeyDown={blockNonIntegerKeys}
+                              onWheel={blurOnWheel}
+                              className="w-full p-1 border border-gray-200 rounded text-xs text-right font-mono"
+                            />
                           ) : <span className="block text-right font-mono">{editedOpportunity.split2}</span>}</td>
                           <td className="p-2">
                             {isEditMode && (

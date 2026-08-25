@@ -44,6 +44,7 @@ export interface ProductItem {
   gmiProductGroup: string; // references GMI Product Group (Lookup)
   appliedCompanyType: 'Company' | 'Individual'; // Radio Button (single-select, required)
   isInsuranceProduct?: 'Yes' | 'No'; // Conditional: shown/required only when appliedCompanyType === 'Individual'
+  autoStageRevert70to30?: boolean; // Checkbox: when checked, Prospect's TASK-19 auto-reverts a 70%-probability Opportunity for this product to 30% after 90 idle days
   salesCreditRule: string; // Formula dropdown
   vendorFields: FieldConfig[];
   premiumFields: FieldConfig[];
@@ -574,6 +575,10 @@ const resolveGmiProductGroup = (name: string): string => {
   return 'INDIVIDUAL SAVING( IS )';
 };
 
+// Seed default for the checkbox added per Prospect PRD TASK-19 (previously
+// hardcoded to these three Pension product names before it became configurable).
+const AUTO_STAGE_REVERT_SEED_PRODUCTS = ['Pension - MPF Add Provider', 'Pension - MPF Re-Opt', 'Pension - ORSO'];
+
 const INITIAL_PRODUCTS: ProductItem[] = INITIAL_PRODUCT_NAMES.map((name, index) => {
   const team = resolveProductTeam(name);
   const category = resolveProductCategory(name);
@@ -587,6 +592,7 @@ const INITIAL_PRODUCTS: ProductItem[] = INITIAL_PRODUCT_NAMES.map((name, index) 
     group: category,
     gmiProductGroup: gmiGroup,
     appliedCompanyType: index % 2 === 0 ? 'Company' : 'Individual',
+    autoStageRevert70to30: AUTO_STAGE_REVERT_SEED_PRODUCTS.includes(name),
     salesCreditRule: SALES_CREDIT_RULES[index % SALES_CREDIT_RULES.length],
     vendorFields: INITIAL_VENDOR_FIELDS.map((f, i) => ({
       name: f,
@@ -835,6 +841,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
   const [detailGroup, setDetailGroup] = useState('');
   const [detailCompanyType, setDetailCompanyType] = useState<'Company' | 'Individual'>('Company');
   const [detailIsInsuranceProduct, setDetailIsInsuranceProduct] = useState<'Yes' | 'No' | ''>('');
+  const [detailAutoStageRevert70to30, setDetailAutoStageRevert70to30] = useState<boolean>(false);
   const [detailSalesCreditRule, setDetailSalesCreditRule] = useState('');
   const [detailVendorFields, setDetailVendorFields] = useState<FieldConfig[]>([]);
   const [detailPremiumFields, setDetailPremiumFields] = useState<FieldConfig[]>([]);
@@ -911,6 +918,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
     setDetailGmiProductGroup(p.gmiProductGroup || 'Pension');
     setDetailCompanyType(p.appliedCompanyType || 'Company');
     setDetailIsInsuranceProduct(p.isInsuranceProduct || '');
+    setDetailAutoStageRevert70to30(p.autoStageRevert70to30 || false);
     setDetailSalesCreditRule(p.salesCreditRule || '');
     setDetailVendorFields(p.vendorFields || []);
     setDetailPremiumFields(p.premiumFields || []);
@@ -1023,6 +1031,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
         detailGmiProductGroup !== '' ||
         detailCompanyType !== 'Company' ||
         detailIsInsuranceProduct !== '' ||
+        detailAutoStageRevert70to30 !== false ||
         detailSalesCreditRule !== '' ||
         JSON.stringify(detailVendorFields) !== JSON.stringify(getBlankVendorFields()) ||
         JSON.stringify(detailPremiumFields) !== JSON.stringify(getBlankPremiumFields()) ||
@@ -1042,6 +1051,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
       detailGmiProductGroup !== (selectedProduct.gmiProductGroup || 'Pension') ||
       detailCompanyType !== (selectedProduct.appliedCompanyType || 'Company') ||
       detailIsInsuranceProduct !== (selectedProduct.isInsuranceProduct || '') ||
+      detailAutoStageRevert70to30 !== (selectedProduct.autoStageRevert70to30 || false) ||
       detailSalesCreditRule !== (selectedProduct.salesCreditRule || '') ||
       detailStatus !== (selectedProduct.status || 'Active') ||
       JSON.stringify(detailVendorFields) !== JSON.stringify(selectedProduct.vendorFields || []) ||
@@ -1241,6 +1251,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
         gmiProductGroup: detailGmiProductGroup,
         appliedCompanyType: detailCompanyType,
         isInsuranceProduct: detailIsInsuranceProduct || undefined,
+        autoStageRevert70to30: detailAutoStageRevert70to30,
         salesCreditRule: detailSalesCreditRule,
         vendorFields: detailVendorFields,
         premiumFields: detailPremiumFields,
@@ -1459,6 +1470,19 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
       });
     }
 
+    if ((selectedProduct.autoStageRevert70to30 || false) !== detailAutoStageRevert70to30) {
+      newAuditsList.push({
+        id: `AUD-P-${Date.now()}-11`,
+        eventType: 'Configuration Change',
+        changedField: 'Auto Stage Revert (70% → 30%)',
+        oldValue: selectedProduct.autoStageRevert70to30 ? 'Checked' : 'Unchecked',
+        newValue: detailAutoStageRevert70to30 ? 'Checked' : 'Unchecked',
+        changedBy: 'System Admin',
+        changedOn: timestamp,
+        productName: detailName.trim()
+      });
+    }
+
     // Restriction Parameters / Document Requirements — order-independent
     // comparisons, since toggling stages or re-adding a requirement row
     // shouldn't itself register as a change if the resulting sets match.
@@ -1540,6 +1564,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
           gmiProductGroup: detailGmiProductGroup,
           appliedCompanyType: detailCompanyType,
           isInsuranceProduct: detailIsInsuranceProduct || undefined,
+          autoStageRevert70to30: detailAutoStageRevert70to30,
           salesCreditRule: detailSalesCreditRule,
           vendorFields: detailVendorFields,
           premiumFields: detailPremiumFields,
@@ -3086,6 +3111,19 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
                           {saveErrors.isInsuranceProduct && <p className="mt-1 text-[11px] text-red-500 font-semibold">{saveErrors.isInsuranceProduct}</p>}
                         </div>
                       )}
+
+                      <div className="md:col-span-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={detailAutoStageRevert70to30}
+                            onChange={(e) => setDetailAutoStageRevert70to30(e.target.checked)}
+                            className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-0 cursor-pointer"
+                          />
+                          <span className="text-xs text-gray-700">Auto Stage Revert (70% → 30%)</span>
+                        </label>
+                        <p className="mt-1 text-[10px] text-gray-400">When checked, a 70%-probability Opportunity for this product is automatically reverted to 30% after 90 days with no stage change (Prospect TASK-19).</p>
+                      </div>
                     </div>
                   </div>
 

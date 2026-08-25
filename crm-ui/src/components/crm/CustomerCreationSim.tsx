@@ -41,8 +41,13 @@ const splitContactName = (fullName?: string): [string, string] => {
 // source Opportunity's own Sales Assignment. Confirming here flips the source
 // Proposal's masterType to 'Customer' and hands it back to App.tsx to persist.
 export const CustomerCreationSim: React.FC<CustomerCreationSimProps> = ({ proposal, onBack, onConfirm }) => {
-  const entityType = resolveCompanyMeta(proposal.client || '').entityType;
+  const { entityType, masterType } = resolveCompanyMeta(proposal.client || '');
   const isCompany = entityType === 'Company';
+  // A Lapsed entity already has a real Company/Individual record — its Name,
+  // Region, Number of Employees, etc. all carry over unchanged (Part 2,
+  // TASK-14). Only the Sales Rep Assignment is actually missing (that's what
+  // made it Lapsed in the first place), so that's the only thing collected here.
+  const isLapsed = masterType === 'Lapsed Customer';
   const matchedLead = MOCK_LEADS.find(l => l.leadName === proposal.client);
   const [initialFirstName, initialLastName] = splitContactName(matchedLead?.contactPerson);
 
@@ -88,6 +93,7 @@ export const CustomerCreationSim: React.FC<CustomerCreationSimProps> = ({ propos
 
   const validate = (): string => {
     if (repsByCategory.Lead.length === 0) return `Select at least one ${isCompany ? 'Lead' : 'Individual'} Sales Rep.`;
+    if (isLapsed) return '';
     if (isCompany) {
       if (!companyName.trim()) return 'Name is required.';
       if (!companyRegion) return 'Region is required.';
@@ -110,7 +116,7 @@ export const CustomerCreationSim: React.FC<CustomerCreationSimProps> = ({ propos
     setError('');
     onConfirm({
       ...proposal,
-      client: isCompany ? companyName : `${firstName} ${lastName}`.trim(),
+      client: isLapsed ? proposal.client : (isCompany ? companyName : `${firstName} ${lastName}`.trim()),
       masterType: 'Customer',
     });
   };
@@ -152,6 +158,14 @@ export const CustomerCreationSim: React.FC<CustomerCreationSimProps> = ({ propos
         )}
 
         <div className="bg-white p-5 rounded-lg border border-gray-200 shadow-sm space-y-4">
+          {isLapsed ? (
+            <div className="text-xs">
+              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">{isCompany ? 'Company' : 'Individual'}</label>
+              <div className="px-2.5 py-1.5 bg-gray-50 border border-gray-100 rounded text-xs font-semibold text-gray-700">{proposal.client}</div>
+              <p className="text-[10px] text-gray-400 mt-1">Existing record — its other details carry over unchanged. Only the Sales Rep Assignment below is being added.</p>
+            </div>
+          ) : (
+          <>
           <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider border-b border-gray-100 pb-1.5">
             {isCompany ? 'Company Information' : 'Individual Information'}
           </h3>
@@ -205,6 +219,8 @@ export const CustomerCreationSim: React.FC<CustomerCreationSimProps> = ({ propos
               </div>
               <div className="md:col-span-2 text-[10px] text-gray-400">At least one of Email, Phone, or Mobile is required.</div>
             </div>
+          )}
+          </>
           )}
 
           <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider border-b border-gray-100 pb-1.5 pt-2">

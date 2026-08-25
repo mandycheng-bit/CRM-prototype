@@ -472,6 +472,26 @@ export const MOCK_INDIVIDUALS: Individual[] = [
     status: 'Active',
     createdDate: '2024-04-01',
     lastUpdated: '2024-04-10'
+  },
+  {
+    id: 'IND-003',
+    fullName: 'Sample Lapsed Individual',
+    chineseName: '示範已流失個人客戶',
+    gender: 'Male',
+    dateOfBirth: '1980-05-12',
+    hkidPassport: 'C222222(2)',
+    jobTitle: 'Retired',
+    department: '',
+    email: 'lapsed.individual@demo.com',
+    directLine: '',
+    mobile: '+852 9999-6666',
+    address: '1/F Demo Building, 1 Sample Street, Hong Kong',
+    region: 'HK',
+    country: 'Hong Kong',
+    roleType: 'VIP Client',
+    status: 'Lapsed',
+    createdDate: '2019-03-10',
+    lastUpdated: '2023-09-05'
   }
 ];
 
