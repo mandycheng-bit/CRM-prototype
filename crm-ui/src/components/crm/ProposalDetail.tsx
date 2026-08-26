@@ -28,7 +28,9 @@ const NB_PROBABILITY_OPTIONS = [0, 10, 30, 70, 90, 100];
 const RB_PROBABILITY_OPTIONS = [0, 65, 75, 85, 95, 100];
 
 // Company/Individual Master lookup: Lead + Customer (Company/Individual), excluding Archived.
-// Selection is two-step: entityType (Company/Individual) then source (Customer/Lead).
+// Selection is single-step — just entityType (Company/Individual); the dropdown then
+// lists every Lead/Customer/Lapsed Customer of that entity type together, and the
+// Master Type tag is derived automatically from whichever one gets picked.
 // Lapsed customers are intentionally NOT excluded — they must remain selectable when creating an Opportunity.
 type MasterType = 'Lead' | 'Customer' | 'Lapsed Customer';
 const COMPANY_INDIVIDUAL_OPTIONS: { id: string; label: string; entityType: 'Company' | 'Individual'; source: 'Customer' | 'Lead'; masterType: MasterType }[] = [
@@ -42,13 +44,6 @@ export const resolveCompanyMeta = (label: string) => {
     ? { entityType: match.entityType, source: match.source, masterType: match.masterType }
     : { entityType: 'Company' as const, source: 'Customer' as const, masterType: 'Customer' as MasterType };
 };
-// The Company/Individual toggle's second row is a 3-way UI concept (Customer /
-// Lead / Lapsed) layered on top of the 2-way `source` field the data actually
-// carries — a Lapsed entity's own `source` is still 'Customer', distinguished
-// only by masterType. This maps a resolved entity's source+masterType to
-// whichever of the three toggle buttons should show as active for it.
-const resolveUiSource = (meta: { source: 'Customer' | 'Lead'; masterType: MasterType }): 'Customer' | 'Lead' | 'Lapsed' =>
-  meta.masterType === 'Lapsed Customer' ? 'Lapsed' : meta.source;
 const CAMPAIGN_OPTIONS = MOCK_CAMPAIGNS.filter(c => c.active).map(c => c.name);
 
 // "Member First Name"/"Member Last Name" were removed from Product Configuration's
@@ -783,7 +778,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     productItem: initialProductItem,
     detailedProductItem: proposal.detailedProductItem || '',
     businessType: proposal.businessType === 'Renewal' ? 'Renewal' : 'NB',
-    campaign: isNew ? '' : (proposal.campaign || CAMPAIGN_OPTIONS[0]),
+    campaign: (isNew || proposal.linkedPreviousProspectId) ? (proposal.campaign || '') : (proposal.campaign || CAMPAIGN_OPTIONS[0]),
     // Sales Assignment — a single rep always holds the full 100% split
     salesRep1: isNew ? '' : (proposal.salesRep || 'Sales Rep A'),
     split1: proposal.split1 ?? 100,
@@ -922,27 +917,19 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     setNumSalesReps(n => Math.max(1, n - 1));
   };
 
-  // Company / Individual selector: two-step (entityType then source); name search is
-  // handled inline by the SearchableDropdown itself.
+  // Company / Individual selector: a single entityType toggle; the dropdown then
+  // lists every Lead/Customer/Lapsed Customer of that type together — Master Type
+  // is derived automatically from whichever one gets picked (see onSelect below).
   const initialCompanyMeta = resolveCompanyMeta(proposal.client || 'DEMO COMPANY CO. LTD.');
   const [companyEntityType, setCompanyEntityType] = useState<'Company' | 'Individual'>(initialCompanyMeta.entityType);
-  const [companySource, setCompanySource] = useState<'Customer' | 'Lead' | 'Lapsed'>(resolveUiSource(initialCompanyMeta));
-  const filteredCompanyOptions = COMPANY_INDIVIDUAL_OPTIONS.filter(o =>
-    o.entityType === companyEntityType &&
-    (companySource === 'Lapsed' ? o.masterType === 'Lapsed Customer' : o.source === companySource && o.masterType !== 'Lapsed Customer')
-  );
-  const masterTypeForSource = (t: 'Customer' | 'Lead' | 'Lapsed'): MasterType => t === 'Lead' ? 'Lead' : t === 'Lapsed' ? 'Lapsed Customer' : 'Customer';
+  const filteredCompanyOptions = COMPANY_INDIVIDUAL_OPTIONS.filter(o => o.entityType === companyEntityType);
 
-  // Switching either toggle clears the current pick rather than auto-selecting
+  // Switching the toggle clears the current pick rather than auto-selecting
   // the first matching option — the user must explicitly re-choose from the
   // SearchableDropdown, which then shows its "Please Select" placeholder.
   const handleToggleCompanyEntityType = (t: 'Company' | 'Individual') => {
     setCompanyEntityType(t);
-    setEditedOpportunity(prev => ({ ...prev, company: '', masterType: masterTypeForSource(companySource) }));
-  };
-  const handleToggleCompanySource = (t: 'Customer' | 'Lead' | 'Lapsed') => {
-    setCompanySource(t);
-    setEditedOpportunity(prev => ({ ...prev, company: '', masterType: masterTypeForSource(t) }));
+    setEditedOpportunity(prev => ({ ...prev, company: '' }));
   };
 
   const handleCancelEdit = () => {
@@ -956,7 +943,6 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     setNumSalesReps(1);
     const meta = resolveCompanyMeta(proposal.client || 'DEMO COMPANY CO. LTD.');
     setCompanyEntityType(meta.entityType);
-    setCompanySource(resolveUiSource(meta));
     setIsEditMode(false);
     setValidationError(null);
   };
@@ -1469,7 +1455,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     if (typeof editedOpportunity.probability !== 'number' || Number.isNaN(editedOpportunity.probability)) missingFields.push('Probability');
     else if (isNew && editedOpportunity.probability === 0) missingFields.push('Probability');
     if (!editedOpportunity.company.trim()) missingFields.push('Company / Individual');
-    if (!editedOpportunity.campaign.trim()) missingFields.push('Campaign');
+    if (!editedOpportunity.campaign.trim() && !proposal.linkedPreviousProspectId) missingFields.push('Campaign');
     if (!editedOpportunity.salesRep1.trim()) missingFields.push('Primary Owner');
     if (!editedOpportunity.productItem.trim()) missingFields.push('Product Item');
     if (missingFields.length > 0) {
@@ -1731,6 +1717,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       productCategory: editedOpportunity.productCategory,
       productItem: editedOpportunity.productItem,
       detailedProductItem: editedOpportunity.detailedProductItem,
+      campaign: '',
       linkedPreviousProspectId: proposal.id,
       linkedNextProspectId: undefined,
       effectiveDate: nextEffectiveDate,
@@ -1738,12 +1725,14 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       lastUpdated: today,
       stageLastUpdated: today,
       remarks: `Auto-created renewal from ${proposal.id} upon reaching 100%.`,
-      salesRep1GrossAmount: 0,
-      salesRep1NetAmount: 0,
-      salesRep2GrossAmount: 0,
-      salesRep2NetAmount: 0,
-      salesRep3GrossAmount: 0,
-      salesRep3NetAmount: 0,
+      // Gross Amount = Oppty Gross Amount × split % — both carried over unchanged
+      // via the `...proposal` spread above, so Gross Amount itself needs no
+      // override here. Net Amount = Gross × Probability, and Probability is
+      // already known (75%) at creation time, so it recomputes immediately
+      // rather than sitting at a stale 0 until the next unrelated save.
+      salesRep1NetAmount: editedOpportunity.salesRep1GrossAmount * (entryLevel / 100),
+      salesRep2NetAmount: editedOpportunity.salesRep2GrossAmount * (entryLevel / 100),
+      salesRep3NetAmount: editedOpportunity.salesRep3GrossAmount * (entryLevel / 100),
       opptyRejectDate: undefined,
       opptyRejectFrequency: 0,
       childProposals: [],
@@ -2082,17 +2071,10 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                     <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Company / Individual <span className="text-red-500">*</span></label>
                     {isEditMode ? (
                       <div className="space-y-1.5">
-                        <div className="flex gap-2">
-                          <div className="flex bg-gray-100 rounded-lg p-1">
-                            {(['Company', 'Individual'] as const).map(t => (
-                              <button key={t} onClick={() => handleToggleCompanyEntityType(t)} className={`px-3 py-1 text-xs font-semibold rounded transition-all ${companyEntityType === t ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>{t}</button>
-                            ))}
-                          </div>
-                          <div className="flex bg-gray-100 rounded-lg p-1">
-                            {(['Customer', 'Lead', 'Lapsed'] as const).map(t => (
-                              <button key={t} onClick={() => handleToggleCompanySource(t)} className={`px-3 py-1 text-xs font-semibold rounded transition-all ${companySource === t ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>{t}</button>
-                            ))}
-                          </div>
+                        <div className="flex bg-gray-100 rounded-lg p-1 w-fit">
+                          {(['Company', 'Individual'] as const).map(t => (
+                            <button key={t} onClick={() => handleToggleCompanyEntityType(t)} className={`px-3 py-1 text-xs font-semibold rounded transition-all ${companyEntityType === t ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>{t}</button>
+                          ))}
                         </div>
                         <SearchableDropdown
                           className="max-w-sm"
@@ -2101,14 +2083,14 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                             id: o.id,
                             label: o.label,
                             value: o.label,
-                            suffix: o.masterType === 'Lapsed Customer' ? ' (Lapsed)' : undefined
+                            suffix: o.masterType === 'Lapsed Customer' ? ' (Lapsed)' : o.masterType === 'Lead' ? ' (Lead)' : undefined
                           }))}
                           onSelect={label => {
                             const chosen = filteredCompanyOptions.find(o => o.label === label);
                             setEditedOpportunity({...editedOpportunity, company: label, masterType: chosen?.masterType || editedOpportunity.masterType});
                           }}
                           placeholder="Search by name..."
-                          buttonPlaceholder={`Please Select ${companyEntityType} ${companySource}`}
+                          buttonPlaceholder={`Please Select ${companyEntityType}`}
                         />
                       </div>
                     ) : (
@@ -2135,7 +2117,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       </div>
                     )}
                   </div>
-                  <FieldView label="Campaign" required editing={isEditMode} viewValue={editedOpportunity.campaign}>
+                  <FieldView label="Campaign" required={!proposal.linkedPreviousProspectId} editing={isEditMode} viewValue={editedOpportunity.campaign}>
                     <SearchableDropdown
                       value={editedOpportunity.campaign}
                       options={CAMPAIGN_OPTIONS.map(name => ({ id: name, label: name, value: name }))}
@@ -2241,7 +2223,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                   <SearchableDropdown
                     className="max-w-sm"
                     value={editedOpportunity.productItem}
-                    options={CONFIG_PRODUCT_NAMES.map(name => ({ id: name, label: name, value: name }))}
+                    options={productList.filter(p => p.appliedCompanyType === companyEntityType).map(p => ({ id: p.name, label: p.name, value: p.name }))}
                     onSelect={selectedItem => {
                       // Switching Product Item can invalidate the draft's current
                       // Probability (Restriction Parameters / Document Requirements

@@ -13,8 +13,9 @@ interface CustomerCreationSimProps {
 const REGIONS = ['Hong Kong', 'Macau'];
 const MAX_SALES_REPS = 3;
 
-// Company gets all four categories; Individual only ever shows Lead (Part 2, TASK-14).
-type SalesRepCategory = 'Insurance' | 'Pension' | 'Project' | 'Lead';
+// Company and Individual both get all four categories — Company's required
+// category is Lead, Individual's is Individual (Part 2, TASK-15).
+type SalesRepCategory = 'Insurance' | 'Pension' | 'Project' | 'Lead' | 'Individual';
 
 // Region codes as stored on a Lead record don't line up 1:1 with the real
 // target system's Region field (Hong Kong / Macau only, per PRD-Leads &
@@ -64,20 +65,24 @@ export const CustomerCreationSim: React.FC<CustomerCreationSimProps> = ({ propos
   const [phone, setPhone] = useState(matchedLead?.phone || '');
   const [mobile, setMobile] = useState('');
 
-  // Sales Rep, per category — Company gets Insurance/Pension/Project (optional)
-  // plus Lead (required); Individual only ever shows Lead. The same rep can
-  // appear in more than one category (e.g. also the Insurance rep). Lead
-  // starts pre-filled from the source Opportunity's own Sales Assignment
-  // (Part 2, TASK-7) since that's the assignment already driving this
-  // conversion; the other categories start empty.
-  const categories: SalesRepCategory[] = isCompany ? ['Insurance', 'Pension', 'Project', 'Lead'] : ['Lead'];
+  // Sales Rep, per category — both Company and Individual get Insurance/
+  // Pension/Project (optional) plus their own required category: Lead for
+  // Company, Individual for Individual. The same rep can appear in more than
+  // one category (e.g. also the Insurance rep). The required category starts
+  // pre-filled from the source Opportunity's own Sales Assignment (Part 2,
+  // TASK-7) since that's the assignment already driving this conversion; the
+  // other three categories start empty.
+  const requiredCategory: SalesRepCategory = isCompany ? 'Lead' : 'Individual';
+  const categories: SalesRepCategory[] = ['Insurance', 'Pension', 'Project', requiredCategory];
   const [repsByCategory, setRepsByCategory] = useState<Record<SalesRepCategory, string[]>>({
     Insurance: [],
     Pension: [],
     Project: [],
-    Lead: [proposal.salesRep, proposal.salesRep2, proposal.salesRep3].filter((r): r is string => !!r).slice(0, MAX_SALES_REPS),
+    Lead: [],
+    Individual: [],
+    [requiredCategory]: [proposal.salesRep, proposal.salesRep2, proposal.salesRep3].filter((r): r is string => !!r).slice(0, MAX_SALES_REPS),
   });
-  const [repToAdd, setRepToAdd] = useState<Record<SalesRepCategory, string>>({ Insurance: '', Pension: '', Project: '', Lead: '' });
+  const [repToAdd, setRepToAdd] = useState<Record<SalesRepCategory, string>>({ Insurance: '', Pension: '', Project: '', Lead: '', Individual: '' });
   const [error, setError] = useState('');
 
   const addSalesRep = (category: SalesRepCategory) => {
@@ -92,7 +97,7 @@ export const CustomerCreationSim: React.FC<CustomerCreationSimProps> = ({ propos
   };
 
   const validate = (): string => {
-    if (repsByCategory.Lead.length === 0) return `Select at least one ${isCompany ? 'Lead' : 'Individual'} Sales Rep.`;
+    if (repsByCategory[requiredCategory].length === 0) return `Select at least one ${requiredCategory} Sales Rep.`;
     if (isLapsed) return '';
     if (isCompany) {
       if (!companyName.trim()) return 'Name is required.';
@@ -231,11 +236,10 @@ export const CustomerCreationSim: React.FC<CustomerCreationSimProps> = ({ propos
             {categories.map(category => {
               const reps = repsByCategory[category];
               const otherReps = SALES_REPS.filter(r => !reps.includes(r));
-              const categoryLabel = category === 'Lead' && !isCompany ? 'Individual' : category;
               return (
                 <div key={category} className="border border-gray-200 rounded-lg p-4">
                   <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">
-                    {categoryLabel}{category === 'Lead' && <span className="text-red-500">*</span>}
+                    {category}{category === requiredCategory && <span className="text-red-500">*</span>}
                   </div>
                   {reps.length === 0 ? (
                     <div className="text-xs text-gray-400 italic mb-2">No sales rep assigned yet.</div>
