@@ -299,6 +299,14 @@ export interface ChildProposal {
   endDate?: string;
   salesCode?: string;
   salesPercentage?: number;
+  // Basic Info parity fields (2027 P3)
+  subsidiary?: string;
+  existingPolicyNo?: string;
+  billingMethod2?: 'By Insurer' | 'By Gainmiles'; // proposal-level billing method toggle (billingMethod is the Expired-Policy column)
+  proposerId?: string;
+  proposerName?: string;
+  salesCode2?: string;
+  salesCode3?: string;
   // Top KPI header fields
   presentIncurredAmount?: number;
   presentPaidAmount?: number;

@@ -1230,6 +1230,39 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     setPremiumRates(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r));
   const deleteRateRow = (id: string) => setPremiumRates(prev => prev.filter(r => r.id !== id));
 
+  // Employee Class Census State — Basic Info block mirroring the live GMI "Employee Class"
+  // entry (GMI Research Sum Class Category + Customer Plan Class + EE/SP/CH/OH counts).
+  interface EmpClassRow {
+    id: string;
+    gmiResearchSumClass: string;
+    customerPlanClass: string;
+    emp: number;
+    spouse: number;
+    child: number;
+    other: number;
+  }
+  const GMI_RESEARCH_SUM_CLASSES = ['UNI Class', 'Executive Class', 'General Class', 'Manager Class', 'Assistant Class'];
+  const [empClassCensus, setEmpClassCensus] = useState<EmpClassRow[]>([
+    { id: 'ec1', gmiResearchSumClass: 'UNI Class', customerPlanClass: 'Plan 1', emp: 7, spouse: 0, child: 0, other: 0 }
+  ]);
+  const [empDraft, setEmpDraft] = useState({ gmiResearchSumClass: 'UNI Class', customerPlanClass: '', emp: '', spouse: '', child: '', other: '' });
+  const addEmpClassRow = () => {
+    if (!empDraft.customerPlanClass.trim()) return;
+    setEmpClassCensus(prev => [...prev, {
+      id: `ec_${Date.now()}`,
+      gmiResearchSumClass: empDraft.gmiResearchSumClass,
+      customerPlanClass: empDraft.customerPlanClass.trim(),
+      emp: Number(empDraft.emp) || 0,
+      spouse: Number(empDraft.spouse) || 0,
+      child: Number(empDraft.child) || 0,
+      other: Number(empDraft.other) || 0
+    }]);
+    setEmpDraft({ gmiResearchSumClass: empDraft.gmiResearchSumClass, customerPlanClass: '', emp: '', spouse: '', child: '', other: '' });
+  };
+  const updateEmpClassRow = (id: string, patch: Partial<EmpClassRow>) =>
+    setEmpClassCensus(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r));
+  const deleteEmpClassRow = (id: string) => setEmpClassCensus(prev => prev.filter(r => r.id !== id));
+
   // Selected Child Proposal State (null = Opportunity Page, object = Proposal Workspace)
   const [selectedChild, setSelectedChild] = useState<ChildProposal | null>(null);
 
@@ -3116,6 +3149,44 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                             <input type="text" value={selectedChild.productItemDetails || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 cursor-not-allowed outline-none" />
                           )}
                         </div>
+                        <div>
+                          <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Subsidiary</label>
+                          {isProposalEditMode ? (
+                            <input type="text" value={selectedChild.subsidiary || ''} onChange={e => setSelectedChild({...selectedChild, subsidiary: e.target.value})} placeholder="e.g. HK Branch" className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                          ) : (
+                            <input type="text" value={selectedChild.subsidiary || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 cursor-not-allowed outline-none" />
+                          )}
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Existing Policy No</label>
+                          {isProposalEditMode ? (
+                            <input type="text" value={selectedChild.existingPolicyNo || ''} onChange={e => setSelectedChild({...selectedChild, existingPolicyNo: e.target.value})} placeholder="e.g. HTE0000986" className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                          ) : (
+                            <input type="text" value={selectedChild.existingPolicyNo || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 font-mono cursor-not-allowed outline-none" />
+                          )}
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Currency</label>
+                          {isProposalEditMode ? (
+                            <select value={selectedChild.currency || 'HKD'} onChange={e => setSelectedChild({...selectedChild, currency: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none">
+                              {['HKD', 'USD', 'CNY', 'GBP', 'EUR', 'SGD'].map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          ) : (
+                            <input type="text" value={selectedChild.currency || 'HKD'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 font-mono cursor-not-allowed outline-none" />
+                          )}
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Billing Method</label>
+                          {isProposalEditMode ? (
+                            <div className="flex gap-1">
+                              {(['By Insurer', 'By Gainmiles'] as const).map(m => (
+                                <button key={m} type="button" onClick={() => setSelectedChild({...selectedChild, billingMethod2: m})} className={`flex-1 px-2 py-1.5 rounded text-[10px] font-bold border transition-colors ${selectedChild.billingMethod2 === m ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{m}</button>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="inline-flex px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-bold">{selectedChild.billingMethod2 || '—'}</span>
+                          )}
+                        </div>
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="bg-gray-50/50 border border-gray-200 rounded-lg p-3">
@@ -3229,6 +3300,101 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                         )}
                         {renewRequiredError && <p className="mt-1 text-[10px] text-red-500 font-semibold">Renew Required must be set before converting to policy.</p>}
                       </div>
+                      <div>
+                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Proposer / Owner ID</label>
+                        {isProposalEditMode ? (
+                          <input type="text" value={selectedChild.proposerId || ''} onChange={e => setSelectedChild({...selectedChild, proposerId: e.target.value})} placeholder="e.g. O-000038" className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                        ) : (
+                          <input type="text" value={selectedChild.proposerId || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 font-mono cursor-not-allowed outline-none" />
+                        )}
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Proposer / Owner Name</label>
+                        {isProposalEditMode ? (
+                          <input type="text" value={selectedChild.proposerName || ''} onChange={e => setSelectedChild({...selectedChild, proposerName: e.target.value})} placeholder="Policy owner legal name" className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                        ) : (
+                          <input type="text" value={selectedChild.proposerName || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 cursor-not-allowed outline-none" />
+                        )}
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Sales Code 2</label>
+                        {isProposalEditMode ? (
+                          <input type="text" value={selectedChild.salesCode2 || ''} onChange={e => setSelectedChild({...selectedChild, salesCode2: e.target.value})} placeholder="Secondary" className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                        ) : (
+                          <input type="text" value={selectedChild.salesCode2 || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 font-mono cursor-not-allowed outline-none" />
+                        )}
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Sales Code 3</label>
+                        {isProposalEditMode ? (
+                          <input type="text" value={selectedChild.salesCode3 || ''} onChange={e => setSelectedChild({...selectedChild, salesCode3: e.target.value})} placeholder="Tertiary" className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                        ) : (
+                          <input type="text" value={selectedChild.salesCode3 || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 font-mono cursor-not-allowed outline-none" />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Employee Class Census — mirrors the live GMI Basic-Info "Employee Class" block */}
+                  <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
+                    <div className="flex items-center gap-2 mb-4 border-b border-gray-100 pb-2">
+                      <div className="p-1 bg-teal-50 rounded text-teal-600"><Users size={14} /></div>
+                      <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Employee Class Census</h3>
+                      <span className="px-2 py-0.5 bg-teal-50 text-teal-800 text-[9px] font-mono border border-teal-200 rounded font-bold uppercase tracking-wider">GMI Research Sum Class</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-7 gap-2 mb-3">
+                      <select value={empDraft.gmiResearchSumClass} onChange={e => setEmpDraft({...empDraft, gmiResearchSumClass: e.target.value})} className="md:col-span-2 px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-teal-500 outline-none">
+                        {GMI_RESEARCH_SUM_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <input type="text" value={empDraft.customerPlanClass} onChange={e => setEmpDraft({...empDraft, customerPlanClass: e.target.value})} placeholder="Customer Plan Class" className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none" />
+                      <input type="number" value={empDraft.emp} onChange={e => setEmpDraft({...empDraft, emp: e.target.value})} placeholder="EE #" className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-teal-500 outline-none" />
+                      <input type="number" value={empDraft.spouse} onChange={e => setEmpDraft({...empDraft, spouse: e.target.value})} placeholder="SP #" className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-teal-500 outline-none" />
+                      <input type="number" value={empDraft.child} onChange={e => setEmpDraft({...empDraft, child: e.target.value})} placeholder="CH #" className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-teal-500 outline-none" />
+                      <button onClick={addEmpClassRow} disabled={!empDraft.customerPlanClass.trim()} className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded text-xs font-bold flex items-center justify-center gap-1 transition-colors">
+                        <Plus size={13} /><span>Add</span>
+                      </button>
+                    </div>
+
+                    <div className="overflow-x-auto border border-gray-150 rounded">
+                      <table className="w-full text-xs text-left border-collapse">
+                        <thead className="bg-gray-50 text-[10px] font-black text-gray-500 uppercase border-b border-gray-150">
+                          <tr>
+                            <th className="px-3 py-2">EIB Res'ch Sum Class Category</th>
+                            <th className="px-3 py-2">Customer Plan Class</th>
+                            <th className="px-3 py-2 text-right">Employee</th>
+                            <th className="px-3 py-2 text-right">Spouse</th>
+                            <th className="px-3 py-2 text-right">Children</th>
+                            <th className="px-3 py-2 text-right">Other</th>
+                            <th className="px-3 py-2 text-right w-12">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {empClassCensus.map(r => (
+                            <tr key={r.id} className="hover:bg-gray-50/50 transition-colors">
+                              <td className="p-1">
+                                <select value={r.gmiResearchSumClass} onChange={e => updateEmpClassRow(r.id, { gmiResearchSumClass: e.target.value })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-teal-500 outline-none text-xs text-gray-700 font-medium">
+                                  {Array.from(new Set([...GMI_RESEARCH_SUM_CLASSES, r.gmiResearchSumClass])).map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                              </td>
+                              <td className="p-1"><input type="text" value={r.customerPlanClass} onChange={e => updateEmpClassRow(r.id, { customerPlanClass: e.target.value })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-teal-500 outline-none text-xs font-semibold text-gray-800" /></td>
+                              <td className="p-1"><input type="number" value={r.emp} onChange={e => updateEmpClassRow(r.id, { emp: Number(e.target.value) || 0 })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-teal-500 outline-none text-xs font-mono text-right text-teal-700 font-bold" /></td>
+                              <td className="p-1"><input type="number" value={r.spouse} onChange={e => updateEmpClassRow(r.id, { spouse: Number(e.target.value) || 0 })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-teal-500 outline-none text-xs font-mono text-right text-gray-700" /></td>
+                              <td className="p-1"><input type="number" value={r.child} onChange={e => updateEmpClassRow(r.id, { child: Number(e.target.value) || 0 })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-teal-500 outline-none text-xs font-mono text-right text-gray-700" /></td>
+                              <td className="p-1"><input type="number" value={r.other} onChange={e => updateEmpClassRow(r.id, { other: Number(e.target.value) || 0 })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-teal-500 outline-none text-xs font-mono text-right text-gray-700" /></td>
+                              <td className="p-1 text-center"><button onClick={() => deleteEmpClassRow(r.id)} className="text-gray-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition-colors"><Trash2 size={12} /></button></td>
+                            </tr>
+                          ))}
+                          <tr className="bg-gray-50 font-bold font-mono">
+                            <td className="px-3 py-2 font-sans" colSpan={2}>Total</td>
+                            <td className="px-3 py-2 text-right text-teal-700">{empClassCensus.reduce((s, r) => s + r.emp, 0)}</td>
+                            <td className="px-3 py-2 text-right">{empClassCensus.reduce((s, r) => s + r.spouse, 0)}</td>
+                            <td className="px-3 py-2 text-right">{empClassCensus.reduce((s, r) => s + r.child, 0)}</td>
+                            <td className="px-3 py-2 text-right">{empClassCensus.reduce((s, r) => s + r.other, 0)}</td>
+                            <td className="px-3 py-2"></td>
+                          </tr>
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </div>
