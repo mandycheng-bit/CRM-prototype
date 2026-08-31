@@ -1197,6 +1197,39 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     setCovSelected([]);
   };
 
+  // Premium Rate Calculation State — editable Sum Insured x Rate -> Per Plan Premium,
+  // mirroring the live GMI "Premium" step (per-benefit rate lines + plan totals).
+  interface PremiumRateLine {
+    id: string;
+    benefit: string;
+    employeeClass: string;
+    sumInsured: number;
+    rate: number; // percent
+  }
+  const [premiumRates, setPremiumRates] = useState<PremiumRateLine[]>([
+    { id: 'pr1', benefit: 'Hospital & Surgical', employeeClass: 'Plan 1: Executive', sumInsured: 120000, rate: 6.5 },
+    { id: 'pr2', benefit: 'Hospital & Surgical', employeeClass: 'Plan 2: General', sumInsured: 60000, rate: 8 },
+    { id: 'pr3', benefit: 'Outpatient', employeeClass: 'Plan 1: Executive', sumInsured: 8000, rate: 12 },
+    { id: 'pr4', benefit: 'Dental', employeeClass: 'Plan 2: General', sumInsured: 5000, rate: 15 }
+  ]);
+  const [rateDraft, setRateDraft] = useState({ benefit: '', employeeClass: '', sumInsured: '', rate: '' });
+  const perPlanPremium = (line: { sumInsured: number; rate: number }) =>
+    Math.round(line.sumInsured * line.rate / 100 * 100) / 100;
+  const addRateRow = () => {
+    if (!rateDraft.benefit.trim()) return;
+    setPremiumRates(prev => [...prev, {
+      id: `pr_${Date.now()}`,
+      benefit: rateDraft.benefit.trim(),
+      employeeClass: rateDraft.employeeClass || (plansList[0]?.name ?? ''),
+      sumInsured: Number(rateDraft.sumInsured) || 0,
+      rate: Number(rateDraft.rate) || 0
+    }]);
+    setRateDraft({ benefit: '', employeeClass: '', sumInsured: '', rate: '' });
+  };
+  const updateRateRow = (id: string, patch: Partial<PremiumRateLine>) =>
+    setPremiumRates(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r));
+  const deleteRateRow = (id: string) => setPremiumRates(prev => prev.filter(r => r.id !== id));
+
   // Selected Child Proposal State (null = Opportunity Page, object = Proposal Workspace)
   const [selectedChild, setSelectedChild] = useState<ChildProposal | null>(null);
 
@@ -3307,6 +3340,104 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Proposal Premium</label>
                       <input type="text" value={`${selectedChild.currency} ${(selectedChild.proposalPremium ?? selectedChild.premium).toLocaleString()}`} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-emerald-700 font-mono font-black cursor-not-allowed outline-none" />
                     </div>
+                  </div>
+
+                  {/* Premium Rate Calculation — mirrors the live GMI Premium step (Sum Insured x Rate -> Per Plan Premium) */}
+                  <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
+                    <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1 bg-emerald-50 rounded text-emerald-600"><DollarSign size={14} /></div>
+                        <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Premium Rate Calculation</h3>
+                        <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 text-[9px] font-mono border border-emerald-200 rounded font-bold uppercase tracking-wider">Mirrors GMI Premium Step</span>
+                      </div>
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{selectedChild.premiumType || 'Per Rate'} · {selectedChild.premiumFrequency || 'Annual'}</span>
+                    </div>
+
+                    {/* Add rate line */}
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3">
+                      <input type="text" value={rateDraft.benefit} onChange={e => setRateDraft({...rateDraft, benefit: e.target.value})} placeholder="Benefit" className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none" />
+                      <select value={rateDraft.employeeClass} onChange={e => setRateDraft({...rateDraft, employeeClass: e.target.value})} className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-emerald-500 outline-none">
+                        <option value="">Employee Class…</option>
+                        {plansList.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                      </select>
+                      <input type="number" value={rateDraft.sumInsured} onChange={e => setRateDraft({...rateDraft, sumInsured: e.target.value})} placeholder="Sum Insured" className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none" />
+                      <input type="number" value={rateDraft.rate} onChange={e => setRateDraft({...rateDraft, rate: e.target.value})} placeholder="Rate %" className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none" />
+                      <button onClick={addRateRow} disabled={!rateDraft.benefit.trim()} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded text-xs font-bold flex items-center justify-center gap-1 transition-colors">
+                        <Plus size={13} /><span>Add</span>
+                      </button>
+                    </div>
+
+                    <div className="overflow-x-auto border border-gray-150 rounded">
+                      <table className="w-full text-xs text-left border-collapse">
+                        <thead className="bg-gray-50 text-[10px] font-black text-gray-500 uppercase border-b border-gray-150">
+                          <tr>
+                            <th className="px-3 py-2">Benefit</th>
+                            <th className="px-3 py-2">Employee Class</th>
+                            <th className="px-3 py-2 text-right">Sum Insured ({selectedChild.currency || 'HKD'})</th>
+                            <th className="px-3 py-2 text-right">Rate (%)</th>
+                            <th className="px-3 py-2 text-right">Per Plan Premium ({selectedChild.currency || 'HKD'})</th>
+                            <th className="px-3 py-2 text-right w-12">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {premiumRates.map(r => (
+                            <tr key={r.id} className="hover:bg-gray-50/50 transition-colors">
+                              <td className="p-1"><input type="text" value={r.benefit} onChange={e => updateRateRow(r.id, { benefit: e.target.value })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-emerald-500 outline-none text-xs font-semibold text-gray-800" /></td>
+                              <td className="p-1">
+                                <select value={r.employeeClass} onChange={e => updateRateRow(r.id, { employeeClass: e.target.value })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-emerald-500 outline-none text-[11px] text-gray-600 font-medium">
+                                  {Array.from(new Set([...plansList.map(p => p.name), r.employeeClass].filter(Boolean))).map(p => <option key={p} value={p}>{p}</option>)}
+                                </select>
+                              </td>
+                              <td className="p-1"><input type="number" value={r.sumInsured} onChange={e => updateRateRow(r.id, { sumInsured: Number(e.target.value) || 0 })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-emerald-500 outline-none text-xs font-mono text-right text-gray-900" /></td>
+                              <td className="p-1"><input type="number" value={r.rate} onChange={e => updateRateRow(r.id, { rate: Number(e.target.value) || 0 })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-emerald-500 outline-none text-xs font-mono text-right text-gray-700" /></td>
+                              <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">{perPlanPremium(r).toLocaleString()}</td>
+                              <td className="p-1 text-center">
+                                <button onClick={() => deleteRateRow(r.id)} className="text-gray-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition-colors"><Trash2 size={12} /></button>
+                              </td>
+                            </tr>
+                          ))}
+                          {premiumRates.length === 0 && (
+                            <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-400 text-xs italic">No rate lines. Add one above.</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Premium by Plan (derived totals) */}
+                    {(() => {
+                      const totals: Record<string, number> = {};
+                      premiumRates.forEach(r => { totals[r.employeeClass] = (totals[r.employeeClass] || 0) + perPlanPremium(r); });
+                      const entries = Object.entries(totals);
+                      const grand = entries.reduce((s, [, v]) => s + v, 0);
+                      const cur = selectedChild.currency || 'HKD';
+                      return (
+                        <div className="mt-4">
+                          <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Premium by Plan (Derived)</h4>
+                          <div className="overflow-x-auto border border-gray-150 rounded">
+                            <table className="w-full text-xs text-left border-collapse">
+                              <thead className="bg-gray-50 text-[10px] font-black text-gray-500 uppercase border-b border-gray-150">
+                                <tr>
+                                  <th className="px-3 py-2">Plan Name</th>
+                                  <th className="px-3 py-2 text-right">Premium ({cur})</th>
+                                </tr>
+                              </thead>
+                              <tbody className="font-mono divide-y divide-gray-100">
+                                {entries.map(([plan, val]) => (
+                                  <tr key={plan}>
+                                    <td className="px-3 py-2 font-sans font-semibold text-gray-800">{plan || '(Unassigned)'}</td>
+                                    <td className="px-3 py-2 text-right font-bold text-gray-900">{val.toLocaleString()}</td>
+                                  </tr>
+                                ))}
+                                <tr className="bg-gray-50 font-bold">
+                                  <td className="px-3 py-2 font-sans">Total</td>
+                                  <td className="px-3 py-2 text-right text-emerald-700">{cur} {grand.toLocaleString()}</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
