@@ -1144,6 +1144,58 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     }
   ]);
 
+  // Coverage Schedule State — flat coverage-line model mirroring the live GMI "Coverages" step
+  // (Benefit -> Coverage -> Category -> Employee Class -> Coverage Value -> Benchmark median).
+  interface CoverageLine {
+    id: string;
+    benefit: string;
+    coverage: string;
+    category: string;
+    employeeClass: string;
+    coverageValue: string;
+    benchmarkMedian: string;
+  }
+  const COVERAGE_CATEGORIES = ['Hospitalization & Surgical', 'Clinical & Outpatient', 'Dental Care', 'Supplementary Medical Rider'];
+  const [coverageRows, setCoverageRows] = useState<CoverageLine[]>([
+    { id: 'cov1', benefit: 'Hospital & Surgical', coverage: 'Room & Board (Per Day)', category: 'Hospitalization & Surgical', employeeClass: 'Plan 1: Executive', coverageValue: 'Semi-Private (Full Cover)', benchmarkMedian: 'Semi-Private Room' },
+    { id: 'cov2', benefit: 'Hospital & Surgical', coverage: 'Surgeon Fee (Per Disability)', category: 'Hospitalization & Surgical', employeeClass: 'Plan 2: General', coverageValue: 'HK$60,000', benchmarkMedian: 'HK$80,000' },
+    { id: 'cov3', benefit: 'Outpatient', coverage: 'GP Consultation', category: 'Clinical & Outpatient', employeeClass: 'Plan 1: Executive', coverageValue: 'Network: Free', benchmarkMedian: 'HK$50 co-pay' },
+    { id: 'cov4', benefit: 'Dental', coverage: 'Scaling & Polishing (Annual)', category: 'Dental Care', employeeClass: 'Plan 2: General', coverageValue: '80% up to HK$1,000', benchmarkMedian: '80% up to HK$1,500' }
+  ]);
+  const [covDraft, setCovDraft] = useState({ benefit: '', coverage: '', category: 'Hospitalization & Surgical', employeeClass: '' });
+  const [covSearch, setCovSearch] = useState('');
+  const [covInsurerAlias, setCovInsurerAlias] = useState('');
+  const [covBenchmarkTag, setCovBenchmarkTag] = useState('');
+  const [covSelected, setCovSelected] = useState<string[]>([]);
+  const [covPageSize, setCovPageSize] = useState(25);
+  const [covPage, setCovPage] = useState(1);
+  const [covGroupFilter, setCovGroupFilter] = useState('ALL');
+  const [covPlanFilter, setCovPlanFilter] = useState('ALL');
+
+  const addCoverageRow = () => {
+    if (!covDraft.benefit.trim() || !covDraft.coverage.trim()) return;
+    const employeeClass = covDraft.employeeClass || (plansList[0]?.name ?? '');
+    setCoverageRows(prev => [...prev, {
+      id: `cov_${Date.now()}`,
+      benefit: covDraft.benefit.trim(),
+      coverage: covDraft.coverage.trim(),
+      category: covDraft.category,
+      employeeClass,
+      coverageValue: '',
+      benchmarkMedian: ''
+    }]);
+    setCovDraft({ benefit: '', coverage: '', category: covDraft.category, employeeClass: '' });
+  };
+  const updateCoverageRow = (id: string, patch: Partial<CoverageLine>) =>
+    setCoverageRows(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r));
+  const deleteCoverageRow = (id: string) => {
+    setCoverageRows(prev => prev.filter(r => r.id !== id));
+    setCovSelected(prev => prev.filter(s => s !== id));
+  };
+  const deleteSelectedCoverages = () => {
+    setCoverageRows(prev => prev.filter(r => !covSelected.includes(r.id)));
+    setCovSelected([]);
+  };
 
   // Selected Child Proposal State (null = Opportunity Page, object = Proposal Workspace)
   const [selectedChild, setSelectedChild] = useState<ChildProposal | null>(null);
@@ -3423,6 +3475,149 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
               {/* Tab 3: Benefit Design */}
               {activeWorkspaceTab === 'benefits' && (
                 <div className="space-y-4">
+                  {/* Coverage Schedule — mirrors the live GMI "Coverages" step (flat Benefit/Coverage/Category/Class/Value/Benchmark rows) */}
+                  <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+                    <div className="flex justify-between items-center mb-3 border-b border-gray-100 pb-1.5">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1 bg-emerald-50 rounded text-emerald-600"><Layers size={14} /></div>
+                        <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Coverage Schedule</h3>
+                        <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 text-[9px] font-mono border border-emerald-200 rounded font-bold uppercase tracking-wider">Mirrors GMI Coverages Step</span>
+                      </div>
+                      <span className="px-2 py-0.5 bg-gray-100 text-gray-500 text-[9px] font-black border border-gray-200 rounded uppercase tracking-wider">{coverageRows.length} Coverages</span>
+                    </div>
+
+                    {/* Add / filter row */}
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-2">
+                      <input type="text" value={covDraft.benefit} onChange={e => setCovDraft({...covDraft, benefit: e.target.value})} placeholder="Benefit" className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none" />
+                      <input type="text" value={covDraft.coverage} onChange={e => setCovDraft({...covDraft, coverage: e.target.value})} placeholder="Coverage" className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none" />
+                      <select value={covDraft.category} onChange={e => setCovDraft({...covDraft, category: e.target.value})} className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-emerald-500 outline-none">
+                        {COVERAGE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <select value={covDraft.employeeClass} onChange={e => setCovDraft({...covDraft, employeeClass: e.target.value})} className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-emerald-500 outline-none">
+                        <option value="">Employee Class…</option>
+                        {plansList.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                      </select>
+                      <button onClick={addCoverageRow} disabled={!covDraft.benefit.trim() || !covDraft.coverage.trim()} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded text-xs font-bold flex items-center justify-center gap-1 transition-colors">
+                        <Plus size={13} /><span>Add</span>
+                      </button>
+                    </div>
+
+                    {/* Controls row: pagination · search · insurer alias · benchmark tag · delete multiple */}
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3">
+                      <select value={covPageSize} onChange={e => { setCovPageSize(Number(e.target.value)); setCovPage(1); }} className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-600 focus:border-emerald-500 outline-none">
+                        {[10, 25, 50].map(n => <option key={n} value={n}>{n} / page</option>)}
+                      </select>
+                      <div className="relative">
+                        <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input type="text" value={covSearch} onChange={e => { setCovSearch(e.target.value); setCovPage(1); }} placeholder="Search benefit / coverage / class" className="w-full pl-7 pr-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none" />
+                      </div>
+                      <select value={covInsurerAlias || selectedChild.vendor || ''} onChange={e => setCovInsurerAlias(e.target.value)} className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-700 focus:border-emerald-500 outline-none" title="Insurer Alias">
+                        {Array.from(new Set([selectedChild.vendor || 'Chubb Insurance HK Limited', 'AIA International', 'AXA General Insurance', 'Bupa (Asia)'])).map(a => <option key={a} value={a}>{a}</option>)}
+                      </select>
+                      <input type="text" value={covBenchmarkTag} onChange={e => setCovBenchmarkTag(e.target.value)} placeholder="Benchmark Tag" className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none" />
+                      <button onClick={deleteSelectedCoverages} disabled={covSelected.length === 0} className="px-3 py-1.5 border border-red-200 text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed rounded text-xs font-bold flex items-center justify-center gap-1 transition-colors">
+                        <Trash2 size={12} /><span>Delete ({covSelected.length})</span>
+                      </button>
+                    </div>
+
+                    {/* Grouping tabs: by benefit + by employee class */}
+                    <div className="flex flex-wrap items-center gap-1 mb-2">
+                      <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest mr-1">Benefit</span>
+                      {['ALL', ...Array.from(new Set(coverageRows.map(r => r.benefit)))].map(b => (
+                        <button key={b} onClick={() => { setCovGroupFilter(b); setCovPage(1); }} className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-colors ${covGroupFilter === b ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                          {b}{b !== 'ALL' && <span className="ml-1 opacity-70">({coverageRows.filter(r => r.benefit === b).length})</span>}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1 mb-3">
+                      <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest mr-1">Plan</span>
+                      {['ALL', ...Array.from(new Set(coverageRows.map(r => r.employeeClass).filter(Boolean)))].map(pl => (
+                        <button key={pl} onClick={() => { setCovPlanFilter(pl); setCovPage(1); }} className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-colors ${covPlanFilter === pl ? 'bg-teal-600 text-white border-teal-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                          {pl === 'ALL' ? 'Plan All' : pl}
+                        </button>
+                      ))}
+                    </div>
+
+                    {(() => {
+                      const q = covSearch.trim().toLowerCase();
+                      const filtered = coverageRows.filter(r =>
+                        (covGroupFilter === 'ALL' || r.benefit === covGroupFilter) &&
+                        (covPlanFilter === 'ALL' || r.employeeClass === covPlanFilter) &&
+                        (q === '' || [r.benefit, r.coverage, r.category, r.employeeClass, r.coverageValue].some(v => v.toLowerCase().includes(q)))
+                      );
+                      const total = filtered.length;
+                      const pages = Math.max(1, Math.ceil(total / covPageSize));
+                      const page = Math.min(covPage, pages);
+                      const start = (page - 1) * covPageSize;
+                      const pageRows = filtered.slice(start, start + covPageSize);
+                      const allOnPageSelected = pageRows.length > 0 && pageRows.every(r => covSelected.includes(r.id));
+                      const catOpts = (cur: string) => Array.from(new Set([...COVERAGE_CATEGORIES, cur]));
+                      const planOpts = (cur: string) => Array.from(new Set([...plansList.map(p => p.name), cur].filter(Boolean)));
+                      return (
+                        <>
+                          <div className="overflow-x-auto border border-gray-150 rounded">
+                            <table className="w-full text-xs text-left border-collapse">
+                              <thead className="bg-gray-50 text-[10px] font-black text-gray-500 uppercase border-b border-gray-150">
+                                <tr>
+                                  <th className="px-2 py-2 w-8 text-center">
+                                    <input type="checkbox" checked={allOnPageSelected} onChange={e => {
+                                      const ids = pageRows.map(r => r.id);
+                                      setCovSelected(prev => e.target.checked ? Array.from(new Set([...prev, ...ids])) : prev.filter(s => !ids.includes(s)));
+                                    }} className="accent-emerald-600" />
+                                  </th>
+                                  <th className="px-3 py-2">Benefits</th>
+                                  <th className="px-3 py-2">Coverages</th>
+                                  <th className="px-3 py-2">Categories</th>
+                                  <th className="px-3 py-2">Employee Class</th>
+                                  <th className="px-3 py-2">Coverage Value</th>
+                                  <th className="px-3 py-2">BenchMark (median)</th>
+                                  <th className="px-3 py-2 text-right w-12">Action</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {pageRows.map(r => (
+                                  <tr key={r.id} className="hover:bg-gray-50/50 transition-colors">
+                                    <td className="px-2 py-1 text-center">
+                                      <input type="checkbox" checked={covSelected.includes(r.id)} onChange={e => setCovSelected(prev => e.target.checked ? [...prev, r.id] : prev.filter(s => s !== r.id))} className="accent-emerald-600" />
+                                    </td>
+                                    <td className="p-1"><input type="text" value={r.benefit} onChange={e => updateCoverageRow(r.id, { benefit: e.target.value })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-emerald-500 outline-none text-xs font-semibold text-gray-800" /></td>
+                                    <td className="p-1"><input type="text" value={r.coverage} onChange={e => updateCoverageRow(r.id, { coverage: e.target.value })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-emerald-500 outline-none text-xs text-gray-700" /></td>
+                                    <td className="p-1">
+                                      <select value={r.category} onChange={e => updateCoverageRow(r.id, { category: e.target.value })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-emerald-500 outline-none text-[11px] text-gray-600 font-medium">
+                                        {catOpts(r.category).map(c => <option key={c} value={c}>{c}</option>)}
+                                      </select>
+                                    </td>
+                                    <td className="p-1">
+                                      <select value={r.employeeClass} onChange={e => updateCoverageRow(r.id, { employeeClass: e.target.value })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-emerald-500 outline-none text-[11px] text-gray-600 font-medium">
+                                        {planOpts(r.employeeClass).map(p => <option key={p} value={p}>{p}</option>)}
+                                      </select>
+                                    </td>
+                                    <td className="p-1"><input type="text" value={r.coverageValue} onChange={e => updateCoverageRow(r.id, { coverageValue: e.target.value })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-emerald-500 outline-none text-xs font-bold text-gray-900" /></td>
+                                    <td className="p-1"><input type="text" value={r.benchmarkMedian} onChange={e => updateCoverageRow(r.id, { benchmarkMedian: e.target.value })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-emerald-500 outline-none text-xs text-gray-500" /></td>
+                                    <td className="p-1 text-center">
+                                      <button onClick={() => deleteCoverageRow(r.id)} className="text-gray-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition-colors"><Trash2 size={12} /></button>
+                                    </td>
+                                  </tr>
+                                ))}
+                                {pageRows.length === 0 && (
+                                  <tr><td colSpan={8} className="px-3 py-6 text-center text-gray-400 text-xs italic">No coverages match the current filter.</td></tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                          <div className="flex justify-between items-center mt-2 text-[11px] text-gray-500">
+                            <span>Showing {total === 0 ? 0 : start + 1} to {Math.min(start + covPageSize, total)} of {total} entries</span>
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => setCovPage(Math.max(1, page - 1))} disabled={page <= 1} className="px-2 py-1 border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50">«</button>
+                              <span className="px-2 font-bold text-gray-600">{page} / {pages}</span>
+                              <button onClick={() => setCovPage(Math.min(pages, page + 1))} disabled={page >= pages} className="px-2 py-1 border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50">»</button>
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+
                   {/* Loaded Product Hierarchy Snapshot (Read-only) */}
                   <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
                     <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
