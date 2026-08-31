@@ -1652,6 +1652,12 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   ]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  // Filing Service X — GUM CSPA typed folder taxonomy (2027 P4)
+  const CSPA_FOLDERS = ['AML & BR', 'Claim Exp Report', 'Claims', 'Correspondence', 'Insurance Bill', 'Leaflet', 'Member List', 'Movement & Adj Rep', 'Policy & End & Benefit Schedule', 'Quotation & MCR', 'Underwriting'];
+  const [filingFolder, setFilingFolder] = useState('Quotation & MCR');
+  const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
+  const [expandedFolder, setExpandedFolder] = useState<string | null>('Quotation & MCR');
+  const filingInputRef = useRef<HTMLInputElement>(null);
 
   // Audit Trails
   const [auditLogs, setAuditLogs] = useState([
@@ -2086,7 +2092,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
           setDocuments(curr => [...curr, {
             id: `D${curr.length + 1}`,
             name: file.name,
-            category: 'Quotation',
+            category: filingFolder,
             date: new Date().toISOString().split('T')[0],
             size: `${(file.size / 1024 / 1024).toFixed(1)} MB`
           }]);
@@ -3635,6 +3641,60 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
               {/* Tab 2: Documents */}
               {activeWorkspaceTab === 'documents' && (
                 <div className="space-y-4">
+                  {/* GUM CSPA Storage — typed folder tree (mirrors the live Filing Service X step) */}
+                  <div className="bg-white p-5 border border-gray-200 rounded-lg shadow-sm">
+                    <div className="flex justify-between items-center mb-3 border-b border-gray-100 pb-2 font-sans">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1 bg-blue-50 rounded text-blue-600"><Archive size={14} /></div>
+                        <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">GUM CSPA Storage</h3>
+                        <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[9px] font-mono font-bold uppercase tracking-wider">Typed Folder Tree</span>
+                      </div>
+                      {selectedFolders.length > 0 && (
+                        <button onClick={() => { setDocuments(prev => prev.filter(d => !selectedFolders.includes(d.category))); setSelectedFolders([]); }} className="px-2.5 py-1 border border-red-200 text-red-600 bg-red-50 hover:bg-red-100 rounded text-[10px] font-bold flex items-center gap-1 transition-colors"><Trash2 size={11} /> Clear files in {selectedFolders.length}</button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1 text-[10px] font-mono text-gray-400 mb-3 flex-wrap">
+                      <span className="text-gray-600 font-bold">GUM CSPA Storage</span><ChevronRight size={11} /><span>policy</span><ChevronRight size={11} /><span>group</span><ChevronRight size={11} /><span className="text-blue-600 truncate max-w-[420px]">{editedOpportunity.company || 'Proposal'}_{selectedChild.classOfProtection || 'Risk Protection'}_{selectedChild.vendor}</span>
+                    </div>
+
+                    <input ref={filingInputRef} type="file" onChange={handleUploadFile} className="hidden" disabled={uploading} />
+
+                    <div className="border border-gray-150 rounded divide-y divide-gray-100">
+                      {CSPA_FOLDERS.map(folder => {
+                        const files = documents.filter(d => d.category === folder);
+                        const isOpen = expandedFolder === folder;
+                        return (
+                          <div key={folder}>
+                            <div className={`flex items-center gap-2 px-3 py-2 text-xs transition-colors ${filingFolder === folder ? 'bg-blue-50/40' : 'hover:bg-gray-50/60'}`}>
+                              <input type="checkbox" checked={selectedFolders.includes(folder)} onChange={e => setSelectedFolders(prev => e.target.checked ? [...prev, folder] : prev.filter(f => f !== folder))} className="accent-blue-600" />
+                              <button onClick={() => setExpandedFolder(isOpen ? null : folder)} className="flex items-center gap-1.5 flex-1 text-left">
+                                {isOpen ? <ChevronDown size={12} className="text-gray-400" /> : <ChevronRight size={12} className="text-gray-400" />}
+                                <FileText size={13} className="text-blue-500 shrink-0" />
+                                <span className="font-bold text-gray-700">{folder}</span>
+                                {files.length > 0 && <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[9px] font-bold">{files.length}</span>}
+                              </button>
+                              <button onClick={() => { setFilingFolder(folder); filingInputRef.current?.click(); }} className="px-2 py-1 bg-white hover:bg-blue-50 text-blue-600 border border-gray-200 hover:border-blue-200 rounded text-[10px] font-bold flex items-center gap-1 transition-all"><Upload size={10} /> Upload</button>
+                            </div>
+                            {isOpen && (
+                              <div className="pl-9 pr-3 pb-2 space-y-1 bg-gray-50/30">
+                                {files.length === 0 ? (
+                                  <p className="text-[10px] text-gray-400 italic py-1">Empty folder.</p>
+                                ) : files.map(doc => (
+                                  <div key={doc.id} className="flex items-center justify-between text-[11px] py-1">
+                                    <span className="flex items-center gap-1.5 text-gray-600"><FileCode size={11} className="text-blue-400" /> {doc.name} <span className="text-gray-400">· {doc.size}</span></span>
+                                    <button onClick={() => setDocuments(documents.filter(d => d.id !== doc.id))} className="text-gray-400 hover:text-red-600 p-0.5 rounded hover:bg-red-50"><Trash2 size={11} /></button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-2">Uploading to: <span className="font-bold text-blue-600">{filingFolder}</span> — use a folder's Upload button to change the target.</p>
+                  </div>
+
                   <div className="bg-white p-5 border border-gray-200 rounded-lg shadow-sm">
                     <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2 font-sans">
                       <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Filing Service X</h3>
