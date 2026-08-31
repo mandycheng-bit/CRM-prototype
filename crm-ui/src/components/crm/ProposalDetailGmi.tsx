@@ -1635,7 +1635,8 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
 
   // Navigations state
   const [activeProspectTab, setActiveProspectTab] = useState<'Opportunity' | 'Proposal'>('Opportunity');
-  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'proposal' | 'premium' | 'documents' | 'benefits' | 'renewal-history'>('proposal');
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'proposal' | 'premium' | 'documents' | 'benefits' | 'renewal-history' | 'preview'>('proposal');
+  const [previewSubTab, setPreviewSubTab] = useState<'summary' | 'coverage' | 'expired' | 'premium'>('summary');
   const [previewingDoc, setPreviewingDoc] = useState<any | null>(null);
 
   // Activities Log State
@@ -3040,7 +3041,8 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                   { id: 'premium', label: 'Premium', icon: DollarSign },
                   { id: 'benefits', label: 'Coverage', icon: Layers },
                   { id: 'documents', label: 'Filing Service X', icon: FileText },
-                  { id: 'renewal-history', label: 'Renewal History', icon: History }
+                  { id: 'renewal-history', label: 'Renewal History', icon: History },
+                  { id: 'preview', label: 'Preview', icon: ClipboardCheck }
                 ] as const).map(tab => {
                   const Icon = tab.icon;
                   const isActive = activeWorkspaceTab === tab.id;
@@ -4243,6 +4245,121 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
 
 
               {/* Tab 4: Renewal History */}
+              {activeWorkspaceTab === 'preview' && (
+                <div className="space-y-4">
+                  <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
+                    <div className="flex items-center gap-2 mb-4 border-b border-gray-100 pb-2">
+                      <div className="p-1 bg-indigo-50 rounded text-indigo-600"><ClipboardCheck size={14} /></div>
+                      <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Preview</h3>
+                      <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded text-[9px] font-mono font-bold uppercase tracking-wider">Read-only</span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1 mb-4 border-b border-gray-100">
+                      {([['summary', 'Summary'], ['coverage', 'Coverage'], ['expired', 'Expired Policy'], ['premium', 'Premium']] as const).map(([k, label]) => (
+                        <button key={k} onClick={() => setPreviewSubTab(k)} className={`px-3 py-1.5 text-xs font-bold border-b-2 -mb-px transition-colors ${previewSubTab === k ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>{label}</button>
+                      ))}
+                    </div>
+
+                    {previewSubTab === 'summary' && (
+                      <div className="overflow-x-auto border border-gray-150 rounded">
+                        <table className="w-full text-xs text-left border-collapse">
+                          <thead className="bg-gray-50 text-[10px] font-black text-gray-500 uppercase border-b border-gray-150">
+                            <tr>{['Name', 'Customer', 'Industry', 'Class of Protection', 'Premium', 'Insurer', 'Subsidiary', 'Effective', 'End Date'].map(h => <th key={h} className="px-3 py-2 whitespace-nowrap">{h}</th>)}</tr>
+                          </thead>
+                          <tbody className="font-mono">
+                            <tr>
+                              <td className="px-3 py-2 font-sans font-semibold text-gray-800">{selectedChild.name}</td>
+                              <td className="px-3 py-2">{editedOpportunity.company}</td>
+                              <td className="px-3 py-2">{selectedChild.industry || '—'}</td>
+                              <td className="px-3 py-2">{selectedChild.classOfProtection || '—'}</td>
+                              <td className="px-3 py-2 font-bold text-emerald-700">{selectedChild.currency} {selectedChild.premium.toLocaleString()}</td>
+                              <td className="px-3 py-2">{selectedChild.vendor}</td>
+                              <td className="px-3 py-2">{selectedChild.subsidiary || '—'}</td>
+                              <td className="px-3 py-2">{selectedChild.effectiveDate}</td>
+                              <td className="px-3 py-2">{selectedChild.endDate || '—'}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {previewSubTab === 'coverage' && (
+                      <div className="overflow-x-auto border border-gray-150 rounded">
+                        <table className="w-full text-xs text-left border-collapse">
+                          <thead className="bg-gray-50 text-[10px] font-black text-gray-500 uppercase border-b border-gray-150">
+                            <tr>{['Customer Category', 'Benefit', 'Coverage', 'Category', 'Coverage Value'].map(h => <th key={h} className="px-3 py-2">{h}</th>)}</tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {coverageRows.map(r => (
+                              <tr key={r.id}>
+                                <td className="px-3 py-2 font-semibold text-gray-800">{r.employeeClass}</td>
+                                <td className="px-3 py-2">{r.benefit}</td>
+                                <td className="px-3 py-2">{r.coverage}</td>
+                                <td className="px-3 py-2">{r.category}</td>
+                                <td className="px-3 py-2 font-mono font-bold text-gray-900">{r.coverageValue || '—'}</td>
+                              </tr>
+                            ))}
+                            {coverageRows.length === 0 && <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-400 italic">No coverages.</td></tr>}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {previewSubTab === 'expired' && (
+                      <div className="overflow-x-auto border border-gray-150 rounded">
+                        <table className="w-full text-xs text-left border-collapse">
+                          <thead className="bg-gray-50 text-[10px] font-black text-gray-500 uppercase border-b border-gray-150">
+                            <tr>{['Policy Number', 'Insurer', 'Product', 'Status', 'Expiry Date', 'Premium', 'Billing Method', 'Debit Note No.', 'Commission Rate'].map(h => <th key={h} className="px-3 py-2 whitespace-nowrap">{h}</th>)}</tr>
+                          </thead>
+                          <tbody className="font-mono divide-y divide-gray-100">
+                            {selectedChild.renewedFrom ? (
+                              <tr>
+                                <td className="px-3 py-2 font-bold">{selectedChild.renewedFrom}</td>
+                                <td className="px-3 py-2">{selectedChild.vendor}</td>
+                                <td className="px-3 py-2">{selectedChild.productItem || '—'}</td>
+                                <td className="px-3 py-2">Expired</td>
+                                <td className="px-3 py-2">{selectedChild.expiryDate || '—'}</td>
+                                <td className="px-3 py-2">{selectedChild.currency} {selectedChild.premium.toLocaleString()}</td>
+                                <td className="px-3 py-2">{selectedChild.billingMethod || '—'}</td>
+                                <td className="px-3 py-2">{selectedChild.debitNoteNo || '—'}</td>
+                                <td className="px-3 py-2">{selectedChild.commissionRate}%</td>
+                              </tr>
+                            ) : (
+                              <tr><td colSpan={9} className="px-3 py-6 text-center text-gray-400 italic font-sans">No Data — full record in the Renewal History tab.</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {previewSubTab === 'premium' && (
+                      <div className="overflow-x-auto border border-gray-150 rounded">
+                        <table className="w-full text-xs text-left border-collapse">
+                          <thead className="bg-gray-50 text-[10px] font-black text-gray-500 uppercase border-b border-gray-150">
+                            <tr>{['Benefit', 'Employee Class', 'Sum Insured', 'Rate (%)', 'Per Plan Premium'].map(h => <th key={h} className="px-3 py-2">{h}</th>)}</tr>
+                          </thead>
+                          <tbody className="font-mono divide-y divide-gray-100">
+                            {premiumRates.map(r => (
+                              <tr key={r.id}>
+                                <td className="px-3 py-2 font-sans font-semibold text-gray-800">{r.benefit}</td>
+                                <td className="px-3 py-2">{r.employeeClass}</td>
+                                <td className="px-3 py-2 text-right">{r.sumInsured.toLocaleString()}</td>
+                                <td className="px-3 py-2 text-right">{r.rate}%</td>
+                                <td className="px-3 py-2 text-right font-bold text-emerald-700">{perPlanPremium(r).toLocaleString()}</td>
+                              </tr>
+                            ))}
+                            <tr className="bg-gray-50 font-bold">
+                              <td className="px-3 py-2 font-sans" colSpan={4}>Total ({selectedChild.currency})</td>
+                              <td className="px-3 py-2 text-right text-emerald-700">{premiumRates.reduce((s, r) => s + perPlanPremium(r), 0).toLocaleString()}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {activeWorkspaceTab === 'renewal-history' && (
                 <div className="space-y-4">
                   <div className="bg-white p-5 border border-gray-200 rounded-lg shadow-sm">
