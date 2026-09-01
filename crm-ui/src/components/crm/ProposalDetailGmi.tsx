@@ -3225,7 +3225,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                           )}
                         </div>
                         <div className="bg-gray-50/50 border border-gray-200 rounded-lg p-3">
-                          <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1"><Calendar size={11} /> Start Date</span>
+                          <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1"><Calendar size={11} /> Effective Date</span>
                           {isProposalEditMode ? (
                             <input type="date" value={selectedChild.effectiveDate} onChange={e => setSelectedChild({...selectedChild, effectiveDate: e.target.value})} className="w-full mt-1 px-2 py-1 border border-gray-200 rounded text-sm font-bold text-gray-900 bg-white font-mono focus:border-blue-500 outline-none" />
                           ) : (
@@ -3233,7 +3233,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                           )}
                         </div>
                         <div className="bg-gray-50/50 border border-gray-200 rounded-lg p-3">
-                          <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1"><Calendar size={11} /> End Date</span>
+                          <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1"><Calendar size={11} /> Expiry Date</span>
                           {isProposalEditMode ? (
                             <input type="date" value={selectedChild.endDate || ''} onChange={e => setSelectedChild({...selectedChild, endDate: e.target.value})} className="w-full mt-1 px-2 py-1 border border-gray-200 rounded text-sm font-bold text-gray-900 bg-white font-mono focus:border-blue-500 outline-none" />
                           ) : (
@@ -3283,7 +3283,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                         )}
                       </div>
                       <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Sales Code</label>
+                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Primary Sales Code</label>
                         {isProposalEditMode ? (
                           <input type="text" value={selectedChild.salesCode || ''} onChange={e => setSelectedChild({...selectedChild, salesCode: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
                         ) : (
@@ -3291,11 +3291,11 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                         )}
                       </div>
                       <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Sales Name</label>
+                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Primary Sales Name</label>
                         <input type="text" value={editedOpportunity.salesRep1} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 cursor-not-allowed outline-none" />
                       </div>
                       <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Sales Percentage</label>
+                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Primary Sales Percentage</label>
                         {isProposalEditMode ? (
                           <input type="number" max={100} value={selectedChild.salesPercentage ?? 100} onChange={e => setSelectedChild({...selectedChild, salesPercentage: Math.min(100, Number(e.target.value))})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
                         ) : (
@@ -4352,23 +4352,26 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       <div className="overflow-x-auto border border-gray-150 rounded">
                         <table className="w-full text-xs text-left border-collapse">
                           <thead className="bg-gray-50 text-[10px] font-black text-gray-500 uppercase border-b border-gray-150">
-                            <tr>{['Policy Number', 'Insurer', 'Product', 'Status', 'Expiry Date', 'Premium', 'Billing Method', 'Debit Note No.', 'Commission Rate'].map(h => <th key={h} className="px-3 py-2 whitespace-nowrap">{h}</th>)}</tr>
+                            <tr>{['Policy Number', 'Customer', 'Insurer', 'Product', 'Status', 'Effective Date', 'Expiry Date', 'Premium', 'Billing Method', 'Debit Note No.', 'Commission Rate', 'Commission Fee'].map(h => <th key={h} className="px-3 py-2 whitespace-nowrap">{h}</th>)}</tr>
                           </thead>
                           <tbody className="font-mono divide-y divide-gray-100">
                             {selectedChild.renewedFrom ? (
                               <tr>
                                 <td className="px-3 py-2 font-bold">{selectedChild.renewedFrom}</td>
+                                <td className="px-3 py-2">{editedOpportunity.company}</td>
                                 <td className="px-3 py-2">{selectedChild.vendor}</td>
                                 <td className="px-3 py-2">{selectedChild.productItem || '—'}</td>
                                 <td className="px-3 py-2">Expired</td>
+                                <td className="px-3 py-2">{selectedChild.effectiveDate || '—'}</td>
                                 <td className="px-3 py-2">{selectedChild.expiryDate || '—'}</td>
                                 <td className="px-3 py-2">{selectedChild.currency} {selectedChild.premium.toLocaleString()}</td>
                                 <td className="px-3 py-2">{selectedChild.billingMethod || '—'}</td>
                                 <td className="px-3 py-2">{selectedChild.debitNoteNo || '—'}</td>
                                 <td className="px-3 py-2">{selectedChild.commissionRate}%</td>
+                                <td className="px-3 py-2">{selectedChild.currency} {Math.round(selectedChild.premium * selectedChild.commissionRate / 100).toLocaleString()}</td>
                               </tr>
                             ) : (
-                              <tr><td colSpan={9} className="px-3 py-6 text-center text-gray-400 italic font-sans">No Data — full record in the Renewal History tab.</td></tr>
+                              <tr><td colSpan={12} className="px-3 py-6 text-center text-gray-400 italic font-sans">No Data — full record in the Renewal History tab.</td></tr>
                             )}
                           </tbody>
                         </table>
