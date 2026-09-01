@@ -1213,6 +1213,9 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     { id: 'pr4', benefit: 'Dental', employeeClass: 'Plan 2: General', sumInsured: 5000, rate: 15 }
   ]);
   const [rateDraft, setRateDraft] = useState({ benefit: '', employeeClass: '', sumInsured: '', rate: '' });
+  const [rateSearch, setRateSearch] = useState('');
+  const [ratePageSize, setRatePageSize] = useState(25);
+  const [ratePage, setRatePage] = useState(1);
   const perPlanPremium = (line: { sumInsured: number; rate: number }) =>
     Math.round(line.sumInsured * line.rate / 100 * 100) / 100;
   const addRateRow = () => {
@@ -3086,6 +3089,14 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                       <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div>
+                          <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Proposal Name</label>
+                          {isProposalEditMode ? (
+                            <input type="text" value={selectedChild.name} onChange={e => setSelectedChild({...selectedChild, name: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-semibold focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                          ) : (
+                            <input type="text" value={selectedChild.name} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 font-semibold cursor-not-allowed outline-none" />
+                          )}
+                        </div>
+                        <div>
                           <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Customer</label>
                           <input type="text" value={editedOpportunity.company} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 cursor-not-allowed outline-none" />
                         </div>
@@ -3100,9 +3111,9 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                         <div>
                           <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Class of Protection</label>
                           {isProposalEditMode ? (
-                            <select value={selectedChild.classOfProtection || 'Statutory'} onChange={e => setSelectedChild({...selectedChild, classOfProtection: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none">
-                              <option value="Statutory">Statutory</option>
-                              <option value="Voluntary">Voluntary</option>
+                            <select value={selectedChild.classOfProtection || ''} onChange={e => setSelectedChild({...selectedChild, classOfProtection: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none">
+                              <option value="" disabled>Please select</option>
+                              {Array.from(new Set(['Risk Protection', 'Statutory', 'Voluntary', selectedChild.classOfProtection].filter(Boolean))).map(o => <option key={o} value={o}>{o}</option>)}
                             </select>
                           ) : (
                             <span className="inline-flex px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-bold uppercase">{selectedChild.classOfProtection || '—'}</span>
@@ -3351,7 +3362,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       <span className="px-2 py-0.5 bg-teal-50 text-teal-800 text-[9px] font-mono border border-teal-200 rounded font-bold uppercase tracking-wider">GMI Research Sum Class</span>
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-7 gap-2 mb-3">
+                    <div className="grid grid-cols-2 md:grid-cols-8 gap-2 mb-3">
                       <select value={empDraft.gmiResearchSumClass} onChange={e => setEmpDraft({...empDraft, gmiResearchSumClass: e.target.value})} className="md:col-span-2 px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-teal-500 outline-none">
                         {GMI_RESEARCH_SUM_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
@@ -3359,6 +3370,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       <input type="number" value={empDraft.emp} onChange={e => setEmpDraft({...empDraft, emp: e.target.value})} placeholder="EE #" className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-teal-500 outline-none" />
                       <input type="number" value={empDraft.spouse} onChange={e => setEmpDraft({...empDraft, spouse: e.target.value})} placeholder="SP #" className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-teal-500 outline-none" />
                       <input type="number" value={empDraft.child} onChange={e => setEmpDraft({...empDraft, child: e.target.value})} placeholder="CH #" className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-teal-500 outline-none" />
+                      <input type="number" value={empDraft.other} onChange={e => setEmpDraft({...empDraft, other: e.target.value})} placeholder="OH #" className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-teal-500 outline-none" />
                       <button onClick={addEmpClassRow} disabled={!empDraft.customerPlanClass.trim()} className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded text-xs font-bold flex items-center justify-center gap-1 transition-colors">
                         <Plus size={13} /><span>Add</span>
                       </button>
@@ -3541,41 +3553,72 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       </button>
                     </div>
 
-                    <div className="overflow-x-auto border border-gray-150 rounded">
-                      <table className="w-full text-xs text-left border-collapse">
-                        <thead className="bg-gray-50 text-[10px] font-black text-gray-500 uppercase border-b border-gray-150">
-                          <tr>
-                            <th className="px-3 py-2">Benefit</th>
-                            <th className="px-3 py-2">Employee Class</th>
-                            <th className="px-3 py-2 text-right">Sum Insured ({selectedChild.currency || 'HKD'})</th>
-                            <th className="px-3 py-2 text-right">Rate (%)</th>
-                            <th className="px-3 py-2 text-right">Per Plan Premium ({selectedChild.currency || 'HKD'})</th>
-                            <th className="px-3 py-2 text-right w-12">Action</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {premiumRates.map(r => (
-                            <tr key={r.id} className="hover:bg-gray-50/50 transition-colors">
-                              <td className="p-1"><input type="text" value={r.benefit} onChange={e => updateRateRow(r.id, { benefit: e.target.value })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-emerald-500 outline-none text-xs font-semibold text-gray-800" /></td>
-                              <td className="p-1">
-                                <select value={r.employeeClass} onChange={e => updateRateRow(r.id, { employeeClass: e.target.value })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-emerald-500 outline-none text-[11px] text-gray-600 font-medium">
-                                  {Array.from(new Set([...plansList.map(p => p.name), r.employeeClass].filter(Boolean))).map(p => <option key={p} value={p}>{p}</option>)}
-                                </select>
-                              </td>
-                              <td className="p-1"><input type="number" value={r.sumInsured} onChange={e => updateRateRow(r.id, { sumInsured: Number(e.target.value) || 0 })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-emerald-500 outline-none text-xs font-mono text-right text-gray-900" /></td>
-                              <td className="p-1"><input type="number" value={r.rate} onChange={e => updateRateRow(r.id, { rate: Number(e.target.value) || 0 })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-emerald-500 outline-none text-xs font-mono text-right text-gray-700" /></td>
-                              <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">{perPlanPremium(r).toLocaleString()}</td>
-                              <td className="p-1 text-center">
-                                <button onClick={() => deleteRateRow(r.id)} className="text-gray-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition-colors"><Trash2 size={12} /></button>
-                              </td>
-                            </tr>
-                          ))}
-                          {premiumRates.length === 0 && (
-                            <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-400 text-xs italic">No rate lines. Add one above.</td></tr>
-                          )}
-                        </tbody>
-                      </table>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                      <select value={ratePageSize} onChange={e => { setRatePageSize(Number(e.target.value)); setRatePage(1); }} className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-600 focus:border-emerald-500 outline-none">
+                        {[10, 25, 50].map(n => <option key={n} value={n}>{n} / page</option>)}
+                      </select>
+                      <div className="relative md:col-span-3">
+                        <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input type="text" value={rateSearch} onChange={e => { setRateSearch(e.target.value); setRatePage(1); }} placeholder="Search benefit / employee class" className="w-full pl-7 pr-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none" />
+                      </div>
                     </div>
+
+                    {(() => {
+                      const q = rateSearch.trim().toLowerCase();
+                      const filtered = premiumRates.filter(r => q === '' || [r.benefit, r.employeeClass].some(v => v.toLowerCase().includes(q)));
+                      const total = filtered.length;
+                      const pages = Math.max(1, Math.ceil(total / ratePageSize));
+                      const page = Math.min(ratePage, pages);
+                      const start = (page - 1) * ratePageSize;
+                      const pageRows = filtered.slice(start, start + ratePageSize);
+                      return (
+                        <>
+                          <div className="overflow-x-auto border border-gray-150 rounded">
+                            <table className="w-full text-xs text-left border-collapse">
+                              <thead className="bg-gray-50 text-[10px] font-black text-gray-500 uppercase border-b border-gray-150">
+                                <tr>
+                                  <th className="px-3 py-2">Benefit</th>
+                                  <th className="px-3 py-2">Employee Class</th>
+                                  <th className="px-3 py-2 text-right">Sum Insured ({selectedChild.currency || 'HKD'})</th>
+                                  <th className="px-3 py-2 text-right">Rate (%)</th>
+                                  <th className="px-3 py-2 text-right">Per Plan Premium ({selectedChild.currency || 'HKD'})</th>
+                                  <th className="px-3 py-2 text-right w-12">Action</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {pageRows.map(r => (
+                                  <tr key={r.id} className="hover:bg-gray-50/50 transition-colors">
+                                    <td className="p-1"><input type="text" value={r.benefit} onChange={e => updateRateRow(r.id, { benefit: e.target.value })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-emerald-500 outline-none text-xs font-semibold text-gray-800" /></td>
+                                    <td className="p-1">
+                                      <select value={r.employeeClass} onChange={e => updateRateRow(r.id, { employeeClass: e.target.value })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-emerald-500 outline-none text-[11px] text-gray-600 font-medium">
+                                        {Array.from(new Set([...plansList.map(p => p.name), r.employeeClass].filter(Boolean))).map(p => <option key={p} value={p}>{p}</option>)}
+                                      </select>
+                                    </td>
+                                    <td className="p-1"><input type="number" value={r.sumInsured} onChange={e => updateRateRow(r.id, { sumInsured: Number(e.target.value) || 0 })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-emerald-500 outline-none text-xs font-mono text-right text-gray-900" /></td>
+                                    <td className="p-1"><input type="number" value={r.rate} onChange={e => updateRateRow(r.id, { rate: Number(e.target.value) || 0 })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-emerald-500 outline-none text-xs font-mono text-right text-gray-700" /></td>
+                                    <td className="px-3 py-2 text-right font-mono font-bold text-emerald-700">{perPlanPremium(r).toLocaleString()}</td>
+                                    <td className="p-1 text-center">
+                                      <button onClick={() => deleteRateRow(r.id)} className="text-gray-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition-colors"><Trash2 size={12} /></button>
+                                    </td>
+                                  </tr>
+                                ))}
+                                {total === 0 && (
+                                  <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-400 text-xs italic">No rate lines match. Add one above.</td></tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                          <div className="flex justify-between items-center mt-2 text-[11px] text-gray-500">
+                            <span>Showing {total === 0 ? 0 : start + 1} to {Math.min(start + ratePageSize, total)} of {total} entries</span>
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => setRatePage(Math.max(1, page - 1))} disabled={page <= 1} className="px-2 py-1 border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50">«</button>
+                              <span className="px-2 font-bold text-gray-600">{page} / {pages}</span>
+                              <button onClick={() => setRatePage(Math.min(pages, page + 1))} disabled={page >= pages} className="px-2 py-1 border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50">»</button>
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
 
                     {/* Premium by Plan (derived totals) */}
                     {(() => {
