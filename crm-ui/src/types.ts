@@ -219,6 +219,7 @@ export interface Proposal {
   linkedPreviousPolicyId?: string;
   linkedPreviousProspectId?: string; // Linked Prospect (backward) — last year's Prospect this renewal was auto-created from
   linkedNextProspectId?: string; // Linked Prospect (forward) — the renewal Prospect auto-created from this one
+  renewRequired?: 'Yes' | 'No'; // Opportunity-level flag — a 100% Oppty with Renew Required = Yes shows the RENEW button in its header (Terence Lee NB & Renewal Oppty workflow, 2026-09-02)
   detailedProductItem?: string; // Detailed Product Item under the GMI Product Group (7-layer product hierarchy)
   opptyOdooId?: string; // System-generated unless migrated in via Import, which may carry a real legacy Odoo ID
   status?: 'Active' | 'Archived'; // Undefined counts as Active — matches the Product Configuration module's convention
@@ -330,6 +331,15 @@ export interface ChildProposal {
   // Finalize → Odoo push (2027 Phase 3)
   odooPushed?: boolean;
   odooPushDate?: string;
+  // Oppty → Proposal auto-creation (Terence Lee NB & Renewal Oppty workflow, 2026-09-02):
+  // when an Opportunity reaches 100% a Proposal is auto-created underneath it, carrying the
+  // Oppty's general info across — product category, the stage-by-stage premium versions, and
+  // (for a Renewal Oppty) the previous cycle's premium so renewal growth/loss auto-maps.
+  autoCreatedFromOppty?: boolean;
+  autoCreatedDate?: string;
+  premiumVersions?: { version: string; label: string; amount: number; source: string; date?: string }[];
+  renewalMappedFromProspectId?: string; // previous-cycle Prospect this renewal proposal's growth/loss is measured against
+  renewalPreviousPremium?: number;      // that previous cycle's premium (snapshot taken at auto-create)
 }
 
 export interface UploadedRequirementFile {

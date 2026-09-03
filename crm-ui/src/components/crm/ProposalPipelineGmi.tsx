@@ -545,6 +545,12 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                         {proposal.status === 'Archived' && (
                           <span className="text-[9px] font-bold uppercase tracking-tight bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded flex-shrink-0">Archived</span>
                         )}
+                        {/* Terence Lee workflow (2026-09-02): a 100% Oppty must have a Proposal underneath it, otherwise billing is stuck */}
+                        {proposal.probability === 100 && (proposal.childProposals && proposal.childProposals.length > 0 ? (
+                          <span className="text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded flex-shrink-0" title={`${proposal.childProposals.length} proposal(s) under this Oppty${proposal.childProposals.some(c => c.autoCreatedFromOppty) ? ' — auto-created at 100%' : ''}`}>Proposal ✓</span>
+                        ) : !proposal.linkedPolicyId ? (
+                          <span className="text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded flex-shrink-0" title="100% Oppty with no Proposal yet — billing is blocked until one exists">No proposal</span>
+                        ) : null)}
                       </div>
                       <p className="text-[11px] text-gray-500 truncate" title={proposal.client}>{proposal.client}</p>
                     </div>

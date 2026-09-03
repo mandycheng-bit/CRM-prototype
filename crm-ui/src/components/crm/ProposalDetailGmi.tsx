@@ -763,6 +763,8 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     productItem: initialProductItem,
     detailedProductItem: proposal.detailedProductItem || '',
     businessType: proposal.businessType === 'Renewal' ? 'Renewal' : 'NB',
+    // Terence Lee workflow (2026-09-02): Oppty-level Renew Required — drives the RENEW button at 100%
+    renewRequired: (proposal.renewRequired || '') as 'Yes' | 'No' | '',
     campaign: proposal.campaign || CAMPAIGN_OPTIONS[0],
     // Sales Assignment — a single rep always holds the full 100% split
     salesRep1: proposal.salesRep || 'Sales Rep A',
@@ -1787,6 +1789,14 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
         savedMasterType = 'Customer';
       }
     }
+    // Terence Lee NB & Renewal Oppty workflow (2026-09-02), rule 1 & 3: the moment an Opportunity
+    // is saved at 100%, a Proposal is auto-created underneath it — Proposal creation is no longer
+    // a separate manual step, so a 100% Oppty can never sit in the portfolio without a Proposal
+    // (the "Oppty moved to portfolio, corp sales never created the proposal → billing stuck" case).
+    // Fires only on the transition into 100%, and only if this Oppty has no Proposal yet.
+    const reachedHundredNow = editedOpportunity.probability === 100 && proposal.probability !== 100;
+    const autoCreatedProposal: ChildProposal | null = reachedHundredNow && childProposals.length === 0 ? buildAutoProposalFromOppty() : null;
+
     const updatedProposal: Proposal = {
       ...proposal,
       name: editedOpportunity.name,
@@ -1820,6 +1830,8 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       opptyRejectDate: editedOpportunity.opptyRejectDate,
       opptyRejectFrequency: editedOpportunity.opptyRejectFrequency,
       productFileRequirements: editedOpportunity.productFileRequirements,
+      renewRequired: (editedOpportunity.renewRequired || undefined) as Proposal['renewRequired'],
+      childProposals: autoCreatedProposal ? [autoCreatedProposal] : proposal.childProposals,
     };
 
     // Data-loss guard (see CLAUDE.md "Save Payload Completeness" rule): every
@@ -1846,6 +1858,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       ['Remark', editedOpportunity.opportunityNotes, updatedProposal.remarks],
       ['Product Item', editedOpportunity.productItem, updatedProposal.productItem],
       ['Product Category', editedOpportunity.productCategory, updatedProposal.productCategory],
+      ['Renew Required', editedOpportunity.renewRequired || undefined, updatedProposal.renewRequired],
     ];
     const unsavedFields = editableFieldChecks
       .filter(([, draftValue, savedValue]) => JSON.stringify(draftValue) !== JSON.stringify(savedValue))
@@ -1861,6 +1874,21 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     onSave?.(updatedProposal);
     setEditedOpportunity(prev => ({ ...prev, masterType: savedMasterType }));
     setIsEditMode(false);
+    if (autoCreatedProposal) {
+      setChildProposals([autoCreatedProposal]);
+      setAuditLogs(prev => [
+        {
+          id: `A${prev.length + 1}`,
+          action: 'Proposal auto-created at 100%',
+          user: 'System',
+          date: new Date().toISOString().replace('T', ' ').substring(0, 16),
+          details: `Opportunity ${proposal.id} reached 100% → Proposal ${autoCreatedProposal.id} auto-created underneath it (Draft), carrying product category, premium versions and renewal mapping from the Oppty.`
+        },
+        ...prev
+      ]);
+      alert(`Opportunity changes saved successfully!\n\nReached 100% → Proposal "${autoCreatedProposal.name}" (${autoCreatedProposal.id}) has been automatically created under this Opportunity (Draft).${editedOpportunity.renewRequired === 'Yes' ? '\nRenew Required = Yes — the RENEW button is now available in the header.' : ''}`);
+      return;
+    }
     alert("Opportunity changes saved successfully!");
   };
 
@@ -1961,6 +1989,52 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     };
   };
 
+  // Terence Lee NB & Renewal Oppty workflow (2026-09-02), rule 4 — the Proposal auto-created when
+  // an Opportunity reaches 100% carries the Oppty's general information across:
+  //  · product category / item (already seeded by createBlankChildProposal)
+  //  · the different versions of premium captured stage-by-stage on the Oppty (30/70/90/100%)
+  //  · for a Renewal Oppty, the previous cycle's premium so renewal growth/loss auto-maps
+  const buildAutoProposalFromOppty = (): ChildProposal => {
+    const base = createBlankChildProposal();
+    const today = new Date().toISOString().split('T')[0];
+    const candidates: { label: string; amount: number | undefined; source: string; date?: string }[] = [
+      { label: 'Gross Amount (Oppty header)', amount: grossAmount || undefined, source: 'CRM Oppty', date: proposal.createdDate },
+      { label: 'Premium Estimate (70% SOB)', amount: proposal.premiumEstimate, source: 'CRM Oppty · SOB stage', date: proposal.stageLastUpdated },
+      { label: 'Total Premium (70% SOB)', amount: proposal.totalPremium, source: 'CRM Oppty · SOB stage', date: proposal.stageLastUpdated },
+      { label: 'Final Quoted Premium (90% Finalize)', amount: proposal.finalQuotedPremium, source: 'CRM Oppty · Finalize stage', date: proposal.stageLastUpdated },
+      { label: 'Final Premium (100% Won)', amount: proposal.finalPremium, source: 'CRM Oppty · Won', date: proposal.wonDate || today },
+    ];
+    const premiumVersions = candidates
+      .filter(c => typeof c.amount === 'number' && c.amount > 0)
+      .map((c, i) => ({ version: `v${i + 1}`, label: c.label, amount: c.amount as number, source: c.source, date: c.date }));
+    const carriedPremium = premiumVersions.length ? premiumVersions[premiumVersions.length - 1].amount : 0;
+
+    let renewalMappedFromProspectId: string | undefined;
+    let renewalPreviousPremium: number | undefined;
+    if (editedOpportunity.businessType === 'Renewal' && proposal.linkedPreviousProspectId) {
+      const prev = allProposals?.find(p => p.id === proposal.linkedPreviousProspectId);
+      if (prev) {
+        const prevChild = prev.childProposals?.find(c => c.isCurrent) || prev.childProposals?.[0];
+        renewalMappedFromProspectId = prev.id;
+        renewalPreviousPremium = prevChild?.proposalPremium ?? prevChild?.premium ?? prev.finalPremium ?? prev.finalQuotedPremium ?? prev.expectedRevenueGross ?? 0;
+      }
+    }
+
+    return {
+      ...base,
+      renewRequired: (editedOpportunity.renewRequired || undefined) as ChildProposal['renewRequired'],
+      premium: carriedPremium,
+      standardPremium: carriedPremium,
+      proposalPremium: carriedPremium,
+      summary: `Auto-created when Opportunity ${proposal.id} reached 100%.`,
+      autoCreatedFromOppty: true,
+      autoCreatedDate: today,
+      premiumVersions,
+      renewalMappedFromProspectId,
+      renewalPreviousPremium,
+    };
+  };
+
   // Create new child proposal
   // Renewal Proposal Creator
   const handleRenewProposal = (propToRenew: ChildProposal) => {
@@ -2002,6 +2076,97 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     alert(`Renewed proposal created: ${code} linked from ${propToRenew.id}. Switched to new proposal workspace.`);
   };
 
+  // Builds next cycle's Renewal Prospect, mapped back to this original Oppty (Linked Prospect on both
+  // sides). Shared by the header RENEW button (Terence workflow, fires at 100%) and by Convert to Policy
+  // (the earlier trigger, kept as a fallback when RENEW was never pressed).
+  const buildRenewalProspect = (sourceChild: ChildProposal | undefined, policyId: string | undefined, trigger: string) => {
+    const today = new Date().toISOString().split('T')[0];
+    let nextEffectiveDate = proposal.effectiveDate;
+    const parsedDate = new Date(proposal.effectiveDate);
+    if (!isNaN(parsedDate.getTime())) {
+      parsedDate.setFullYear(parsedDate.getFullYear() + 1);
+      nextEffectiveDate = parsedDate.toISOString().split('T')[0];
+    }
+
+    const renewalId = `P-REN-${Date.now().toString().slice(-6)}`;
+    const renewalProspect: Proposal = {
+      ...proposal,
+      id: renewalId,
+      name: `${editedOpportunity.name} (Renewal)`,
+      stage: 'Draft',
+      probability: 65, // RB entry-level (lowest valid Renewal probability); 30 was invalid for RB
+      businessType: 'Renewal',
+      client: editedOpportunity.company,
+      salesRep: editedOpportunity.salesRep1,
+      productCategory: editedOpportunity.productCategory,
+      productItem: editedOpportunity.productItem,
+      // "Product Item Details (Copied from Previous Proposal)" carries forward the actual Product Item
+      // Details selected on the Proposal being renewed from, not the Opportunity's own legacy field.
+      detailedProductItem: sourceChild?.productItemDetails || '',
+      // The renewal cycle inherits Renew Required so the chain can continue year over year
+      renewRequired: (editedOpportunity.renewRequired || sourceChild?.renewRequired || undefined) as Proposal['renewRequired'],
+      linkedPreviousProspectId: proposal.id,
+      linkedNextProspectId: undefined,
+      linkedPolicyId: policyId,
+      effectiveDate: nextEffectiveDate,
+      createdDate: today,
+      lastUpdated: today,
+      stageLastUpdated: today,
+      remarks: `Auto-created renewal from ${proposal.id} ${trigger}.`,
+      // Report & Dashboard figures are specific to this year's deal — the new renewal starts fresh.
+      // Product File Requirements carry over via the ...proposal spread, since compliance requirements are typically stable year over year.
+      salesRep1GrossAmount: 0,
+      salesRep1NetAmount: 0,
+      salesRep2GrossAmount: 0,
+      salesRep2NetAmount: 0,
+      salesRep3GrossAmount: 0,
+      salesRep3NetAmount: 0,
+      opptyRejectDate: undefined,
+      opptyRejectFrequency: 0,
+      // A fresh renewal starts at 65% (RB entry-level) with no Proposal of its own yet — must not
+      // inherit the original Opportunity's Proposal history via the ...proposal spread. Its own
+      // Proposal is auto-created the moment it is saved at 100% (buildAutoProposalFromOppty).
+      childProposals: [],
+    };
+    return { renewalProspect, renewalId };
+  };
+
+  // Terence Lee NB & Renewal Oppty workflow (2026-09-02), slides 6–7: when an NB Oppty turns 100%
+  // and Renew Required = Yes, a RENEW button pops up in the Oppty header. Clicking it creates next
+  // cycle's Renewal Oppty, mapped to the original NB Oppty. This moves the renewal trigger earlier
+  // than the previous "on Convert to Policy" point, which now skips renewal creation if RENEW already ran.
+  const handleRenewOpportunity = () => {
+    if (proposal.probability !== 100) {
+      alert('RENEW is only available once this Opportunity has been saved at 100% probability.');
+      return;
+    }
+    if (editedOpportunity.renewRequired !== 'Yes') {
+      alert('Set "Renew Required" = Yes on this Opportunity (and Save) to enable RENEW.');
+      return;
+    }
+    if (proposal.linkedNextProspectId) {
+      const existing = allProposals?.find(x => x.id === proposal.linkedNextProspectId);
+      alert(`A renewal Prospect already exists for this Opportunity: "${existing?.name || proposal.linkedNextProspectId}".`);
+      return;
+    }
+    const currentChild = childProposals.find(c => c.isCurrent) || childProposals[0];
+    const { renewalProspect, renewalId } = buildRenewalProspect(currentChild, proposal.linkedPolicyId, 'via RENEW at 100%');
+    onCreateRenewal?.(renewalProspect);
+    // Forward link on this (original) Prospect so both sides show Linked Prospect
+    onSave?.({ ...proposal, childProposals, linkedNextProspectId: renewalId });
+    setAuditLogs(prev => [
+      {
+        id: `A${prev.length + 1}`,
+        action: 'RENEW',
+        user: editedOpportunity.salesRep1,
+        date: new Date().toISOString().replace('T', ' ').substring(0, 16),
+        details: `Renewal Prospect ${renewalId} created at 100% (Renew Required = Yes) and mapped back to ${proposal.id}.`
+      },
+      ...prev
+    ]);
+    alert(`Renewal Prospect "${renewalProspect.name}" (${renewalId}) created, linked back to this Prospect.`);
+  };
+
   // Convert Proposal to Policy
   const handleConvertToPolicy = (p: ChildProposal) => {
     if (!p.renewRequired) {
@@ -2028,53 +2193,15 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       return;
     }
 
-    // Auto-create next year's renewal Prospect, linked back to this one (trigger: Proposal converted to Policy, gated on Renew Required = Yes)
-    const today = new Date().toISOString().split('T')[0];
-    let nextEffectiveDate = proposal.effectiveDate;
-    const parsedDate = new Date(proposal.effectiveDate);
-    if (!isNaN(parsedDate.getTime())) {
-      parsedDate.setFullYear(parsedDate.getFullYear() + 1);
-      nextEffectiveDate = parsedDate.toISOString().split('T')[0];
+    // Already renewed via the header RENEW button at 100% (Terence workflow) — never create a second renewal Prospect
+    if (proposal.linkedNextProspectId) {
+      const existing = allProposals?.find(x => x.id === proposal.linkedNextProspectId);
+      alert(`Proposal converted to policy successfully! Policy Number Generated: ${newPolicyId}\n\nRenewal Prospect "${existing?.name || proposal.linkedNextProspectId}" already exists (created via RENEW when this Opportunity reached 100%) — no second renewal was created.`);
+      return;
     }
 
-    const renewalId = `P-REN-${Date.now().toString().slice(-6)}`;
-    const renewalProspect: Proposal = {
-      ...proposal,
-      id: renewalId,
-      name: `${editedOpportunity.name} (Renewal)`,
-      stage: 'Draft',
-      probability: 65, // RB entry-level (lowest valid Renewal probability); 30 was invalid for RB
-      businessType: 'Renewal',
-      client: editedOpportunity.company,
-      salesRep: editedOpportunity.salesRep1,
-      productCategory: editedOpportunity.productCategory,
-      productItem: editedOpportunity.productItem,
-      // "Product Item Details (Copied from Previous Proposal)" carries forward the
-      // actual Product Item Details selected on the Proposal being renewed from (p),
-      // not the Opportunity's own (legacy/unused) detailedProductItem field.
-      detailedProductItem: p.productItemDetails || '',
-      linkedPreviousProspectId: proposal.id,
-      linkedPolicyId: newPolicyId,
-      effectiveDate: nextEffectiveDate,
-      createdDate: today,
-      lastUpdated: today,
-      stageLastUpdated: today,
-      remarks: `Auto-created renewal from ${proposal.id} upon conversion to policy.`,
-      // Report & Dashboard figures are specific to this year's deal — the new renewal starts fresh.
-      // Product File Requirements carry over via the ...proposal spread, since compliance requirements are typically stable year over year.
-      salesRep1GrossAmount: 0,
-      salesRep1NetAmount: 0,
-      salesRep2GrossAmount: 0,
-      salesRep2NetAmount: 0,
-      salesRep3GrossAmount: 0,
-      salesRep3NetAmount: 0,
-      opptyRejectDate: undefined,
-      opptyRejectFrequency: 0,
-      // A fresh renewal starts at 65% (RB entry-level) with no Proposal of its own yet — must not
-      // inherit the original Opportunity's Proposal history via the ...proposal spread.
-      childProposals: [],
-    };
-
+    // Fallback trigger: RENEW was never pressed, so create next year's renewal Prospect now (gated on Renew Required = Yes)
+    const { renewalProspect, renewalId } = buildRenewalProspect(p, newPolicyId, 'upon conversion to policy');
     onCreateRenewal?.(renewalProspect);
     // Set the forward link on this (original) Prospect so both sides show Linked Prospect
     onSave?.({ ...proposal, linkedNextProspectId: renewalId });
@@ -2187,7 +2314,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       return;
                     }
                     if (childProposals.length === 0) {
-                      const fresh = createBlankChildProposal();
+                      const fresh = buildAutoProposalFromOppty();
                       setChildProposals([fresh]);
                       setSelectedChild(fresh);
                     } else {
@@ -2280,6 +2407,17 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                         <Trash2 size={14} />
                         <span>Delete</span>
                       </button>
+                      {/* Terence Lee workflow (2026-09-02): RENEW pops up when the Oppty is 100% and Renew Required = Yes */}
+                      {editedOpportunity.probability === 100 && editedOpportunity.renewRequired === 'Yes' && !proposal.linkedNextProspectId && (
+                        <button
+                          onClick={handleRenewOpportunity}
+                          title="Renew Required = Yes at 100% — create next cycle's Renewal Prospect, mapped to this Oppty"
+                          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-black tracking-wider shadow-sm transition-all flex items-center gap-1.5"
+                        >
+                          <RefreshCw size={14} />
+                          <span>RENEW</span>
+                        </button>
+                      )}
                       <button onClick={() => setIsEditMode(true)} className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-xs font-bold shadow-sm transition-all flex items-center gap-1.5">
                         <Edit size={14} />
                         <span>Edit</span>
@@ -2323,6 +2461,24 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                       <span className="text-3xl font-black text-gray-900">{editedOpportunity.probability}%</span>
                     )}
                   </div>
+                  {/* Terence Lee workflow (2026-09-02): Oppty-level Renew Required — at 100% + Yes the RENEW button appears */}
+                  <div className="md:ml-auto">
+                    <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Renew Required</label>
+                    {isEditMode ? (
+                      <select
+                        value={editedOpportunity.renewRequired}
+                        onChange={e => setEditedOpportunity({...editedOpportunity, renewRequired: e.target.value as 'Yes' | 'No' | ''})}
+                        className="text-sm font-bold text-gray-900 bg-white border border-orange-300 focus:border-orange-500 rounded px-2.5 py-1.5 outline-none"
+                      >
+                        <option value="">— Not set —</option>
+                        <option value="Yes">Yes</option>
+                        <option value="No">No</option>
+                      </select>
+                    ) : (
+                      <span className={`inline-flex px-2.5 py-1.5 border text-xs font-black rounded uppercase tracking-wider ${editedOpportunity.renewRequired === 'Yes' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : editedOpportunity.renewRequired === 'No' ? 'bg-gray-50 text-gray-600 border-gray-200' : 'bg-white text-gray-400 border-gray-200'}`}>{editedOpportunity.renewRequired || 'Not set'}</span>
+                    )}
+                    <p className="text-[10px] text-gray-500 mt-1">100% + Yes → RENEW button</p>
+                  </div>
                 </div>
                 {editedOpportunity.probability === 0 && (
                   <div className="mt-4 max-w-xs">
@@ -2336,6 +2492,26 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                 )}
               </div>
               <p className="text-xs text-gray-500 -mt-2">Net Amount: <span className="font-bold text-gray-700">HK${netAmount.toLocaleString()}</span></p>
+              {/* Terence Lee workflow (2026-09-02): Proposal auto-created at 100% — surfaced on the Oppty so the link is obvious */}
+              {(() => {
+                const auto = childProposals.find(c => c.autoCreatedFromOppty);
+                if (proposal.probability !== 100 || !auto) return null;
+                return (
+                  <div className="-mt-2 flex flex-wrap items-center justify-between gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2.5">
+                    <div className="flex items-center gap-2 text-xs text-emerald-800">
+                      <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                      <span>Proposal <span className="font-mono font-bold">{auto.id}</span> was auto-created under this Opportunity when it reached 100%{auto.autoCreatedDate ? ` (${auto.autoCreatedDate})` : ''} — Proposal creation is no longer a separate step.</span>
+                    </div>
+                    <button
+                      onClick={() => { setSelectedChild(childProposals.find(p => p.isCurrent) || childProposals[0]); setActiveWorkspaceTab('proposal'); setActiveProspectTab('Proposal'); }}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold flex items-center gap-1"
+                    >
+                      <span>Open Proposal</span>
+                      <ChevronRight size={12} />
+                    </button>
+                  </div>
+                );
+              })()}
 
               {/* Opportunity Information */}
               <div className="bg-white p-5 rounded-lg border border-gray-200 shadow-sm">
@@ -2853,6 +3029,25 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                 {selectedChild.odooPushed && <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold text-[10px] rounded">Quotation → Odoo</span>}
               </div>
               <p className="text-[10px] text-gray-500">Opportunity: <span className="font-semibold text-gray-700">{editedOpportunity.name}</span> · Customer: {editedOpportunity.company}</p>
+              {/* Terence Lee workflow (2026-09-02), rule 2: GMI's original 4 stages are kept — Draft > SOB > Finalize > Policy, derived from the proposal status */}
+              <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                <span className="text-[9px] font-black text-gray-400 uppercase tracking-wider mr-1">GMI stage</span>
+                {(() => {
+                  const gmiStage = (selectedChild.policyId || selectedChild.status === 'Converted to Policy') ? 3
+                    : (selectedChild.odooPushed || selectedChild.status === 'Finalized' || selectedChild.status === 'Approved' || selectedChild.status === 'Accepted') ? 2
+                    : (selectedChild.sobApproved || selectedChild.status === 'Pending Internal Approval' || selectedChild.status === 'Pending Insurer') ? 1
+                    : 0;
+                  return ['Draft', 'SOB', 'Finalize', 'Policy'].map((s, i) => (
+                    <React.Fragment key={s}>
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${i === gmiStage ? 'bg-gray-900 text-white' : i < gmiStage ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-400'}`}>{s}</span>
+                      {i < 3 && <ChevronRight size={10} className="text-gray-300" />}
+                    </React.Fragment>
+                  ));
+                })()}
+                {selectedChild.autoCreatedFromOppty && (
+                  <span className="ml-2 px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded text-[9px] font-bold" title={`Auto-created from Opportunity ${proposal.id} at 100%`}>Auto-created from Oppty</span>
+                )}
+              </div>
             </div>
 
             {/* Chevron Trail */}
@@ -3080,6 +3275,95 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
               {/* Tab 1: Basic Information */}
               {activeWorkspaceTab === 'proposal' && (
                 <div className="space-y-4">
+                  {/* Terence Lee workflow (2026-09-02), rule 4: Oppty general info carried into the Proposal —
+                      product category, the stage-by-stage premium versions, previous renewal's growth/loss mapping */}
+                  {(selectedChild.autoCreatedFromOppty || (selectedChild.premiumVersions && selectedChild.premiumVersions.length > 0) || selectedChild.renewalMappedFromProspectId) && (
+                    <div className="bg-white border border-emerald-200 rounded-lg shadow-sm p-5">
+                      <div className="flex items-center justify-between gap-2 mb-3 border-b border-gray-100 pb-2">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1 bg-emerald-50 rounded text-emerald-600"><TrendingUp size={14} /></div>
+                          <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Carried from Opportunity</h3>
+                        </div>
+                        <span className="text-[10px] text-gray-500">Oppty <span className="font-mono font-bold text-gray-700">{proposal.id}</span>{selectedChild.autoCreatedDate ? ` · auto-created ${selectedChild.autoCreatedDate}` : ''}</span>
+                      </div>
+                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-2 gap-3 content-start">
+                          <div>
+                            <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Product Category</label>
+                            <p className="text-xs font-semibold text-gray-800">{selectedChild.productCategory || editedOpportunity.productCategory || '—'}</p>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Product Item</label>
+                            <p className="text-xs font-semibold text-gray-800">{selectedChild.productItem || '—'}</p>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Business Type</label>
+                            <p className="text-xs font-semibold text-gray-800">{editedOpportunity.businessType === 'Renewal' ? 'Renewal (RB)' : 'New Business (NB)'}</p>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Renew Required (Oppty)</label>
+                            <p className="text-xs font-semibold text-gray-800">{editedOpportunity.renewRequired || '—'}</p>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Premium Versions (captured stage-by-stage on the Oppty)</label>
+                          {selectedChild.premiumVersions && selectedChild.premiumVersions.length > 0 ? (
+                            <div className="overflow-x-auto border border-gray-150 rounded">
+                              <table className="w-full text-xs text-left border-collapse">
+                                <thead className="bg-gray-50 text-[10px] font-black text-gray-500 uppercase border-b border-gray-150">
+                                  <tr><th className="px-2 py-1.5">Ver.</th><th className="px-2 py-1.5">Captured at</th><th className="px-2 py-1.5 text-right">Amount</th><th className="px-2 py-1.5">Source</th></tr>
+                                </thead>
+                                <tbody>
+                                  {selectedChild.premiumVersions.map((v, i, arr) => (
+                                    <tr key={v.version} className={`border-t border-gray-100 ${i === arr.length - 1 ? 'bg-emerald-50/40 font-semibold' : ''}`}>
+                                      <td className="px-2 py-1.5 font-mono text-gray-500">{v.version}</td>
+                                      <td className="px-2 py-1.5 text-gray-800">{v.label}</td>
+                                      <td className="px-2 py-1.5 text-right font-mono text-gray-800">{selectedChild.currency || 'HKD'} {v.amount.toLocaleString()}</td>
+                                      <td className="px-2 py-1.5 text-gray-500">{v.source}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-gray-400 italic">No premium figures were captured on the Opportunity.</p>
+                          )}
+                          <p className="text-[10px] text-gray-500 mt-1">The latest version seeded this proposal's premium — refine it on the Premium tab.</p>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Renewal Growth / Loss (auto-mapped)</label>
+                          {selectedChild.renewalMappedFromProspectId ? (() => {
+                            const prevPremium = selectedChild.renewalPreviousPremium ?? 0;
+                            const curPremium = selectedChild.proposalPremium ?? selectedChild.premium ?? 0;
+                            const delta = curPremium - prevPremium;
+                            const pct = prevPremium > 0 ? (delta / prevPremium) * 100 : null;
+                            const prevProspect = allProposals?.find(p => p.id === selectedChild.renewalMappedFromProspectId);
+                            const cur = selectedChild.currency || 'HKD';
+                            return (
+                              <div className="bg-gray-50 border border-gray-200 rounded p-3 space-y-1 text-xs">
+                                <div className="flex justify-between"><span className="text-gray-500">Previous cycle premium</span><span className="font-mono text-gray-800">{cur} {prevPremium.toLocaleString()}</span></div>
+                                <div className="flex justify-between"><span className="text-gray-500">This proposal premium</span><span className="font-mono text-gray-800">{cur} {curPremium.toLocaleString()}</span></div>
+                                <div className={`flex justify-between font-bold ${delta >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                                  <span>{delta >= 0 ? 'Renewal Growth' : 'Renewal Loss'}</span>
+                                  <span className="font-mono">{delta >= 0 ? '+' : '-'}{Math.abs(delta).toLocaleString()}{pct !== null ? ` (${delta >= 0 ? '+' : '-'}${Math.abs(pct).toFixed(1)}%)` : ''}</span>
+                                </div>
+                                <p className="text-[10px] text-gray-500 pt-1 border-t border-gray-200">
+                                  Mapped from previous Prospect{' '}
+                                  {prevProspect ? (
+                                    <button onClick={() => confirmDiscardOpportunityChanges() && onNavigateToProspect?.(prevProspect)} className="text-blue-600 hover:underline font-semibold">{prevProspect.name}</button>
+                                  ) : (
+                                    <span className="font-mono">{selectedChild.renewalMappedFromProspectId}</span>
+                                  )}
+                                </p>
+                              </div>
+                            );
+                          })() : (
+                            <p className="text-xs text-gray-400 italic">{editedOpportunity.businessType === 'Renewal' ? 'No previous Prospect is linked — nothing to map.' : 'New Business — growth/loss applies from the first renewal cycle onward.'}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   {/* Basic Info */}
                   <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
                     <div className="flex items-center gap-2 mb-4 border-b border-gray-100 pb-2">
