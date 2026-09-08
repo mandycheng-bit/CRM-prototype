@@ -51,11 +51,12 @@ const FILTER_FIELDS: { key: FilterKey; label: string }[] = [
   { key: 'campaign', label: 'Campaign' },
   { key: 'productItem', label: 'Product Item' },
   { key: 'productTeam', label: 'Product Team' },
+  { key: 'productGroup', label: 'Product Group' },
   { key: 'productCategory', label: 'Product Category' },
   { key: 'gmiProductGroup', label: 'GMI Product Group' },
 ];
 
-type FilterKey = 'salesRep' | 'salesTeam' | 'productItem' | 'productTeam' | 'productCategory' | 'gmiProductGroup' | 'campaign';
+type FilterKey = 'salesRep' | 'salesTeam' | 'productItem' | 'productTeam' | 'productGroup' | 'productCategory' | 'gmiProductGroup' | 'campaign';
 
 // Export column catalog — user can freely check/uncheck any subset, or select all.
 const EXPORT_FIELD_DEFS: { key: string; label: string }[] = [
@@ -185,7 +186,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [activeFilters, setActiveFilters] = useState<Record<FilterKey, string>>({
-    salesRep: '', salesTeam: '', productItem: '', productTeam: '', productCategory: '', gmiProductGroup: '', campaign: '',
+    salesRep: '', salesTeam: '', productItem: '', productTeam: '', productGroup: '', productCategory: '', gmiProductGroup: '', campaign: '',
   });
   // Effective Date is a continuous field, so it's a From/To range rather than
   // an exact-match dropdown like the rest of FILTER_FIELDS — kept as separate
@@ -241,6 +242,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
   // than storing them redundantly on the Proposal record.
   const getSalesTeam = (p: Proposal) => SALES_REP_TEAM_MAP[p.salesRep] || '';
   const getProductTeam = (p: Proposal) => getProductMeta(p.productItem)?.team || '';
+  const getProductGroup = (p: Proposal) => getProductMeta(p.productItem)?.productGroup || '';
   const getGmiProductGroup = (p: Proposal) => getProductMeta(p.productItem)?.gmiProductGroup || '';
   const getCompanyId = (p: Proposal) =>
     MOCK_COMPANIES.find(c => c.name === p.client)?.id || MOCK_INDIVIDUALS.find(i => i.fullName === p.client)?.id || '';
@@ -410,6 +412,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
     salesTeam: getSalesTeam,
     productItem: p => p.productItem,
     productTeam: getProductTeam,
+    productGroup: getProductGroup,
     productCategory: p => p.productCategory,
     gmiProductGroup: getGmiProductGroup,
     campaign: p => p.campaign,
@@ -417,7 +420,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
 
   const filterOptions = useMemo(() => {
     const options: Record<FilterKey, string[]> = {
-      salesRep: [], salesTeam: [], productItem: [], productTeam: [], productCategory: [], gmiProductGroup: [], campaign: [],
+      salesRep: [], salesTeam: [], productItem: [], productTeam: [], productGroup: [], productCategory: [], gmiProductGroup: [], campaign: [],
     };
     FILTER_FIELDS.forEach(({ key }) => {
       options[key] = Array.from(new Set(allProposals.map(fieldValueGetters[key]).filter(Boolean))).sort();
@@ -726,21 +729,21 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                   title="Select/deselect all filtered rows for export"
                 />
               </th>
-              <th className="px-6 py-4 text-left">Sales Team</th>
+              <th className="px-6 py-4 text-left">Sales Team (Primary)</th>
               <th className="px-6 py-4 text-left">Sales Rep 1</th>
               <th className="px-6 py-4 text-left">Sales Rep 2</th>
-              <th className="px-6 py-4 text-left">Company</th>
-              <th className="px-6 py-4 text-left">Oppty #</th>
+              <th className="px-6 py-4 text-left">Company / Individual</th>
+              <th className="px-6 py-4 text-left">Oppty Name</th>
               <th className="px-6 py-4 text-left">Effective Date</th>
               <th className="px-6 py-4 text-left">Stage</th>
-              <th className="px-6 py-4 text-left">Oppty Product</th>
+              <th className="px-6 py-4 text-left">Product Category</th>
               <th className="px-6 py-4 text-left">Product Item</th>
               <th className="px-6 py-4 text-left">Salesperson</th>
               <th className="px-6 py-4 text-left">Oppty Status</th>
               <th className="px-6 py-4 text-right">Gross Amount</th>
               <th className="px-6 py-4 text-right">Net Amount</th>
-              <th className="px-6 py-4 text-right">Gross Amount (Sales Split)</th>
-              <th className="px-6 py-4 text-right">Net Amount (Sales Split)</th>
+              <th className="px-6 py-4 text-right">Sales Rep 1 Gross Amount</th>
+              <th className="px-6 py-4 text-right">Sales Rep 1 Net Amount</th>
               <th className="px-6 py-4 text-right">Actions</th>
             </tr>
           </thead>
@@ -969,7 +972,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                   <span className="text-xs font-bold text-gray-700">Filters</span>
                   {activeFilterCount > 0 && (
                     <button
-                      onClick={() => { setActiveFilters({ salesRep: '', salesTeam: '', productItem: '', productTeam: '', productCategory: '', gmiProductGroup: '', campaign: '' }); setEffectiveDateFrom(''); setEffectiveDateTo(''); }}
+                      onClick={() => { setActiveFilters({ salesRep: '', salesTeam: '', productItem: '', productTeam: '', productGroup: '', productCategory: '', gmiProductGroup: '', campaign: '' }); setEffectiveDateFrom(''); setEffectiveDateTo(''); }}
                       className="text-[11px] text-orange-600 hover:text-orange-700 font-medium"
                     >
                       Clear all
