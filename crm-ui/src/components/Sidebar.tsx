@@ -9,8 +9,8 @@ interface Props {
 }
 
 const MAIN_ITEMS: { id: ModuleId; label: string; icon: typeof Briefcase }[] = [
-  { id: 'perspective-pipeline', label: 'Prospect(2026)', icon: Briefcase },
-  { id: 'prospect-2027', label: 'Prospect(2027)', icon: Briefcase },
+  { id: 'perspective-pipeline', label: 'Opportunity(2026)', icon: Briefcase },
+  { id: 'prospect-2027', label: 'Opportunity(2027)', icon: Briefcase },
   { id: 'benchmark', label: 'Benchmark', icon: BarChart2 },
 ];
 

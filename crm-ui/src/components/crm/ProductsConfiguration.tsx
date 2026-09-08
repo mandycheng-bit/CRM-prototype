@@ -3122,7 +3122,7 @@ export const ProductsConfiguration: React.FC<ProductsConfigurationProps> = ({ pr
                           />
                           <span className="text-xs text-gray-700">Auto Stage Revert (70% → 30%)</span>
                         </label>
-                        <p className="mt-1 text-[10px] text-gray-400">When checked, a 70%-probability Opportunity for this product is automatically reverted to 30% after 90 days with no stage change (Prospect TASK-19).</p>
+                        <p className="mt-1 text-[10px] text-gray-400">When checked, a 70%-probability Opportunity for this product is automatically reverted to 30% after 90 days with no stage change (TASK-19).</p>
                       </div>
                     </div>
                   </div>

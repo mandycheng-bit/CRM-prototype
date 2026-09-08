@@ -2024,7 +2024,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     }
 
     if (p.renewRequired !== 'Yes') {
-      alert(`Proposal converted to policy successfully! Policy Number Generated: ${newPolicyId}\n\nRenew Required = "${p.renewRequired}" — no renewal Prospect was auto-created.`);
+      alert(`Proposal converted to policy successfully! Policy Number Generated: ${newPolicyId}\n\nRenew Required = "${p.renewRequired}" — no renewal Opportunity was auto-created.`);
       return;
     }
 
@@ -2079,7 +2079,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     // Set the forward link on this (original) Prospect so both sides show Linked Prospect
     onSave?.({ ...proposal, linkedNextProspectId: renewalId });
 
-    alert(`Proposal converted to policy successfully! Policy Number Generated: ${newPolicyId}\n\nRenew Required = "Yes" — a renewal Prospect "${renewalProspect.name}" (${renewalId}) has been automatically created for next year, linked back to this Prospect.`);
+    alert(`Proposal converted to policy successfully! Policy Number Generated: ${newPolicyId}\n\nRenew Required = "Yes" — a renewal Opportunity "${renewalProspect.name}" (${renewalId}) has been automatically created for next year, linked back to this Opportunity.`);
   };
 
   // Simulated drag-drop upload

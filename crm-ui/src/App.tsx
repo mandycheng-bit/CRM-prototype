@@ -125,7 +125,7 @@ export default function App() {
     }
     if (activeModule === 'perspective-pipeline') {
       return (
-        <ErrorBoundary moduleLabel="Prospect Pipeline">
+        <ErrorBoundary moduleLabel="Opportunity Pipeline">
           <ProposalPipeline
             proposals={proposals}
             onProposalClick={setSelectedProposal}
@@ -170,7 +170,7 @@ export default function App() {
     }
     if (activeModule === 'prospect-2027') {
       return (
-        <ErrorBoundary moduleLabel="Prospect Pipeline">
+        <ErrorBoundary moduleLabel="Opportunity Pipeline">
           <ProposalPipelineGmi
             proposals={proposals}
             onProposalClick={setSelectedProposal}
@@ -222,8 +222,8 @@ export default function App() {
   };
 
   const MODULE_LABEL: Record<ModuleId, string> = {
-    'perspective-pipeline': 'Prospect Pipeline (2026)',
-    'prospect-2027': 'Prospect Pipeline (2027)',
+    'perspective-pipeline': 'Opportunity Pipeline (2026)',
+    'prospect-2027': 'Opportunity Pipeline (2027)',
     'benchmark': 'Benchmark',
     'products': 'Product Configuration',
     'opportunity-config': 'Opportunity Configuration',

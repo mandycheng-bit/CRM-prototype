@@ -219,6 +219,7 @@ export interface Proposal {
   linkedPreviousPolicyId?: string;
   linkedPreviousProspectId?: string; // Linked Prospect (backward) — last year's Prospect this renewal was auto-created from
   linkedNextProspectId?: string; // Linked Prospect (forward) — the renewal Prospect auto-created from this one
+  renewalRequired?: 'Yes' | 'No'; // Whether this Opportunity should be offered for renewal (feeds the Bulk Renew eligibility filter)
   detailedProductItem?: string; // Detailed Product Item under the GMI Product Group (7-layer product hierarchy)
   opptyOdooId?: string; // System-generated unless migrated in via Import, which may carry a real legacy Odoo ID
   status?: 'Active' | 'Archived'; // Undefined counts as Active — matches the Product Configuration module's convention

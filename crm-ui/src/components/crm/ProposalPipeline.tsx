@@ -2,8 +2,8 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import type { Proposal, ProposalStage } from '../../types';
 import { MOCK_PROPOSALS, MOCK_COMPANIES, MOCK_INDIVIDUALS } from '../../constants';
 import { getConfiguredProducts } from './ProductsConfiguration';
-import { SALES_REP_TEAM_MAP } from './ProposalDetail';
-import { MoreHorizontal, MoreVertical, Plus, Filter, Search, LayoutGrid, List as ListIcon, History, Download, Upload, FileDown, Archive, Trash2, ChevronLeft, ChevronRight, XCircle } from 'lucide-react';
+import { SALES_REP_TEAM_MAP, buildRenewalProposal, resolveCompanyMeta } from './ProposalDetail';
+import { MoreHorizontal, MoreVertical, Plus, Filter, Search, LayoutGrid, List as ListIcon, History, Download, Upload, FileDown, Archive, Trash2, ChevronLeft, ChevronRight, XCircle, RefreshCw } from 'lucide-react';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { Toast, useToast } from '../Toast';
 
@@ -21,19 +21,24 @@ interface ProposalPipelineProps {
 type DealsView = 'active' | 'archived';
 
 // Board columns are Oppty Stage (probability), not the raw `stage` field:
-// "Lost" = probability 0%, "Expired" = still open (not 0%/100%) but the
-// Effective Date has already passed, otherwise grouped by probability — a value
-// that doesn't land exactly on one of these thresholds is folded down into
-// the nearest lower one.
+// "Lost" = probability 0%, "Rejected" = linked Compliance check came back
+// Rejected (complianceStatus) — NB Individual Opportunities only (Compliance
+// Checking never reviews Company Opportunities — Part 4, Section 01, Scope
+// Boundary); Renewal never gets this column either way. "Expired" = still
+// open (not 0%/100%) but the Effective Date has already passed, otherwise
+// grouped by probability — a value that doesn't land exactly on one of these
+// thresholds is folded down into the nearest lower one.
 const NB_STAGE_THRESHOLDS = [10, 30, 70, 90, 100];
 const RB_STAGE_THRESHOLDS = [65, 75, 85, 95, 100];
 const CASE_LOST_COLUMN = 'Lost';
 const EXPIRED_COLUMN = 'Expired';
+const REJECTED_COLUMN = 'Rejected';
 
 const isPastEffectiveDate = (p: Proposal) => !!p.effectiveDate && new Date(p.effectiveDate) < new Date();
 
 const getOpptyStageColumn = (p: Proposal, thresholds: number[]): string => {
   if (p.probability === 0) return CASE_LOST_COLUMN;
+  if (p.businessType === 'NB' && p.complianceStatus === 'Rejected' && resolveCompanyMeta(p.client || '').entityType === 'Individual') return REJECTED_COLUMN;
   if (p.probability !== 100 && isPastEffectiveDate(p)) return EXPIRED_COLUMN;
   const reached = thresholds.filter(t => t <= p.probability);
   const bucket = reached.length ? Math.max(...reached) : thresholds[0];
@@ -43,13 +48,14 @@ const getOpptyStageColumn = (p: Proposal, thresholds: number[]): string => {
 const FILTER_FIELDS: { key: FilterKey; label: string }[] = [
   { key: 'salesRep', label: 'Sales Rep 1' },
   { key: 'salesTeam', label: 'Sales Team' },
+  { key: 'campaign', label: 'Campaign' },
   { key: 'productItem', label: 'Product Item' },
   { key: 'productTeam', label: 'Product Team' },
   { key: 'productCategory', label: 'Product Category' },
   { key: 'gmiProductGroup', label: 'GMI Product Group' },
 ];
 
-type FilterKey = 'salesRep' | 'salesTeam' | 'productItem' | 'productTeam' | 'productCategory' | 'gmiProductGroup';
+type FilterKey = 'salesRep' | 'salesTeam' | 'productItem' | 'productTeam' | 'productCategory' | 'gmiProductGroup' | 'campaign';
 
 // Export column catalog — user can freely check/uncheck any subset, or select all.
 const EXPORT_FIELD_DEFS: { key: string; label: string }[] = [
@@ -179,8 +185,13 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [activeFilters, setActiveFilters] = useState<Record<FilterKey, string>>({
-    salesRep: '', salesTeam: '', productItem: '', productTeam: '', productCategory: '', gmiProductGroup: '',
+    salesRep: '', salesTeam: '', productItem: '', productTeam: '', productCategory: '', gmiProductGroup: '', campaign: '',
   });
+  // Effective Date is a continuous field, so it's a From/To range rather than
+  // an exact-match dropdown like the rest of FILTER_FIELDS — kept as separate
+  // state instead of forcing it into the Record<FilterKey, string> shape.
+  const [effectiveDateFrom, setEffectiveDateFrom] = useState('');
+  const [effectiveDateTo, setEffectiveDateTo] = useState('');
   const filterPanelRef = useRef<HTMLDivElement>(null);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
@@ -191,6 +202,15 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
   // currently visible under the active filters" and re-syncs to that whenever
   // the filters change, but the user can still deselect individual rows.
   const [selectedProposalIds, setSelectedProposalIds] = useState<Set<string>>(new Set());
+  // Bulk Renew (GUM-9111) — eligibility mirrors TASK-16's single-record Renew
+  // button (100% probability, no renewal already linked) plus the new Renewal
+  // Required field; not scoped to Active/Archived or NB/RB, since eligibility
+  // is a property of the Opportunity itself, not of the current view filters.
+  const [showBulkRenewModal, setShowBulkRenewModal] = useState(false);
+  const [bulkRenewSelectedIds, setBulkRenewSelectedIds] = useState<Set<string>>(new Set());
+  const bulkRenewEligible = useMemo(() => proposals.filter(p =>
+    p.probability === 100 && p.renewalRequired === 'Yes' && !p.linkedNextProspectId && p.status !== 'Archived'
+  ), [proposals]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -245,7 +265,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
     setExportValidationError(null);
     const header = fields.map(f => toCsvCell(f.label)).join(',');
     const dataRows = selectedProposals.map(p => fields.map(f => toCsvCell(getExportValue(p, f.key))).join(','));
-    downloadFile(`Prospect_Export_${selectedProposals.length}.csv`, [header, ...dataRows].join('\r\n'), 'text/csv;charset=utf-8;');
+    downloadFile(`Opportunity_Export_${selectedProposals.length}.csv`, [header, ...dataRows].join('\r\n'), 'text/csv;charset=utf-8;');
     setShowExportPanel(false);
   };
 
@@ -382,7 +402,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
 
   const handleDownloadImportTemplate = () => {
     const csv = [IMPORT_TEMPLATE_COLUMNS.map(toCsvCell).join(','), IMPORT_TEMPLATE_SAMPLE_ROW.map(toCsvCell).join(',')].join('\r\n');
-    downloadFile('Prospect_Import_Template.csv', csv, 'text/csv;charset=utf-8;');
+    downloadFile('Opportunity_Import_Template.csv', csv, 'text/csv;charset=utf-8;');
   };
 
   const fieldValueGetters: Record<FilterKey, (p: Proposal) => string> = {
@@ -392,11 +412,12 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
     productTeam: getProductTeam,
     productCategory: p => p.productCategory,
     gmiProductGroup: getGmiProductGroup,
+    campaign: p => p.campaign,
   };
 
   const filterOptions = useMemo(() => {
     const options: Record<FilterKey, string[]> = {
-      salesRep: [], salesTeam: [], productItem: [], productTeam: [], productCategory: [], gmiProductGroup: [],
+      salesRep: [], salesTeam: [], productItem: [], productTeam: [], productCategory: [], gmiProductGroup: [], campaign: [],
     };
     FILTER_FIELDS.forEach(({ key }) => {
       options[key] = Array.from(new Set(allProposals.map(fieldValueGetters[key]).filter(Boolean))).sort();
@@ -405,7 +426,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allProposals, configuredProducts]);
 
-  const activeFilterCount = Object.values(activeFilters).filter(Boolean).length;
+  const activeFilterCount = Object.values(activeFilters).filter(Boolean).length + (effectiveDateFrom || effectiveDateTo ? 1 : 0);
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
 
@@ -427,6 +448,9 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
       if (activeFilters[key] && fieldValueGetters[key](p) !== activeFilters[key]) return false;
     }
 
+    if (effectiveDateFrom && p.effectiveDate < effectiveDateFrom) return false;
+    if (effectiveDateTo && p.effectiveDate > effectiveDateTo) return false;
+
     return true;
   });
 
@@ -436,7 +460,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
   useEffect(() => {
     setSelectedProposalIds(new Set(filteredProposals.map(p => p.id)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [proposals, searchQuery, businessTypeFilter, dealsView, activeFilters]);
+  }, [proposals, searchQuery, businessTypeFilter, dealsView, activeFilters, effectiveDateFrom, effectiveDateTo]);
 
   const toggleProposalSelected = (id: string) => {
     setSelectedProposalIds(prev => {
@@ -488,8 +512,24 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
     setPendingDeleteRow(null);
   };
 
+  // Bulk Renew (GUM-9111) — each selected source gets the same per-record Renew
+  // logic as TASK-16's single-record flow (buildRenewalProposal), just applied
+  // to N records in one action instead of one at a time.
+  const handleBulkRenewConfirm = () => {
+    const sources = bulkRenewEligible.filter(p => bulkRenewSelectedIds.has(p.id));
+    if (sources.length === 0) return;
+    const renewals = sources.map((source, idx) => buildRenewalProposal(source, `-${idx}`));
+    sources.forEach((source, idx) => {
+      onUpdateProposal?.({ ...source, linkedNextProspectId: renewals[idx].id });
+    });
+    onImportProposals?.(renewals);
+    setShowBulkRenewModal(false);
+    setBulkRenewSelectedIds(new Set());
+    showToast(`${renewals.length} renewal Opportunity${renewals.length === 1 ? '' : 's'} created.`);
+  };
+
   const stageThresholds = businessTypeFilter === 'NB' ? NB_STAGE_THRESHOLDS : RB_STAGE_THRESHOLDS;
-  const displayColumns = [CASE_LOST_COLUMN, EXPIRED_COLUMN, ...stageThresholds.map(t => `${t}%`)];
+  const displayColumns = [CASE_LOST_COLUMN, EXPIRED_COLUMN, ...(businessTypeFilter === 'NB' ? [REJECTED_COLUMN] : []), ...stageThresholds.map(t => `${t}%`)];
 
   const getProposalsByColumn = (column: string) => {
     return filteredProposals.filter(p => getOpptyStageColumn(p, stageThresholds) === column);
@@ -508,7 +548,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
       {displayColumns.map(column => {
         const proposals = getProposalsByColumn(column);
         const totalValue = proposals.reduce((sum, p) => sum + p.expectedRevenueGross, 0);
-        const isProblemColumn = column === CASE_LOST_COLUMN || column === EXPIRED_COLUMN;
+        const isProblemColumn = column === CASE_LOST_COLUMN || column === EXPIRED_COLUMN || column === REJECTED_COLUMN;
         const isCollapsed = collapsedColumns.has(column);
 
         if (isCollapsed) {
@@ -631,20 +671,26 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 mb-1">
-                        <h3 className="text-xs font-bold text-gray-900 group-hover:text-orange-600 transition-colors truncate" title={proposal.name}>
-                          {proposal.name}
+                        <h3 className="text-xs font-bold text-gray-900 group-hover:text-orange-600 transition-colors truncate" title={proposal.client}>
+                          {proposal.client}
                         </h3>
                         {proposal.status === 'Archived' && (
                           <span className="text-[9px] font-bold uppercase tracking-tight bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded flex-shrink-0">Archived</span>
                         )}
                       </div>
-                      <p className="text-[11px] text-gray-500 truncate" title={proposal.client}>{proposal.client}</p>
+                      <p className="text-[11px] text-gray-500 truncate" title={proposal.productItem}>{proposal.productItem}</p>
                     </div>
-                    
+
                     <div className="flex-shrink-0 mt-3 pt-2 border-t border-gray-100">
-                      <div className="flex flex-col">
-                        <span className="text-[9px] text-gray-400 uppercase font-black tracking-wider">Revenue</span>
-                        <span className="text-xs font-bold text-gray-900">${proposal.expectedRevenueGross.toLocaleString()}</span>
+                      <div className="flex items-center gap-4">
+                        <div className="flex flex-col">
+                          <span className="text-[9px] text-gray-400 uppercase font-black tracking-wider">Gross</span>
+                          <span className="text-xs font-bold text-gray-900">${proposal.expectedRevenueGross.toLocaleString()}</span>
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-[9px] text-gray-400 uppercase font-black tracking-wider">Net</span>
+                          <span className="text-xs font-bold text-gray-900">${proposal.expectedRevenueNet.toLocaleString()}</span>
+                        </div>
                       </div>
 
                       <div className="mt-2 flex items-center gap-2">
@@ -680,14 +726,21 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                   title="Select/deselect all filtered rows for export"
                 />
               </th>
-              <th className="px-6 py-4 text-left">Prospect ID</th>
-              <th className="px-6 py-4 text-left">Prospect Name</th>
+              <th className="px-6 py-4 text-left">Sales Team</th>
+              <th className="px-6 py-4 text-left">Sales Rep 1</th>
+              <th className="px-6 py-4 text-left">Sales Rep 2</th>
               <th className="px-6 py-4 text-left">Company</th>
+              <th className="px-6 py-4 text-left">Oppty #</th>
+              <th className="px-6 py-4 text-left">Effective Date</th>
               <th className="px-6 py-4 text-left">Stage</th>
-              <th className="px-6 py-4 text-right">Gross Revenue</th>
-              <th className="px-6 py-4 text-right">Net Revenue</th>
-              <th className="px-6 py-4 text-left">Sales Owner</th>
-              <th className="px-6 py-4 text-left">Last Updated</th>
+              <th className="px-6 py-4 text-left">Oppty Product</th>
+              <th className="px-6 py-4 text-left">Product Item</th>
+              <th className="px-6 py-4 text-left">Salesperson</th>
+              <th className="px-6 py-4 text-left">Oppty Status</th>
+              <th className="px-6 py-4 text-right">Gross Amount</th>
+              <th className="px-6 py-4 text-right">Net Amount</th>
+              <th className="px-6 py-4 text-right">Gross Amount (Sales Split)</th>
+              <th className="px-6 py-4 text-right">Net Amount (Sales Split)</th>
               <th className="px-6 py-4 text-right">Actions</th>
             </tr>
           </thead>
@@ -706,10 +759,14 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                     disabled={isLoading}
                   />
                 </td>
-                <td className="px-6 py-4 font-mono text-xs text-blue-600 font-medium">{proposal.id}</td>
+                <td className="px-6 py-4 text-gray-600">{getSalesTeam(proposal)}</td>
+                <td className="px-6 py-4 text-gray-600">{proposal.salesRep}</td>
+                <td className="px-6 py-4 text-gray-600">{proposal.salesRep2 || '—'}</td>
+                <td className="px-6 py-4 text-gray-600">{proposal.client}</td>
                 <td className="px-6 py-4">
                   <div className="flex flex-col">
                     <span className="font-bold text-gray-900">{proposal.name}</span>
+                    <span className="text-[9px] text-gray-400 font-mono">{proposal.id}</span>
                     {proposal.businessType === 'Renewal' && (
                       <span className="text-[9px] font-bold text-blue-600 uppercase">Renewal</span>
                     )}
@@ -719,9 +776,9 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                         <button
                           onClick={(e) => { e.stopPropagation(); onProposalClick(prevProspect); }}
                           className="text-[9px] text-blue-500 hover:text-blue-700 hover:underline font-semibold text-left mt-0.5"
-                          title={`Linked Prospect: ${prevProspect.name}`}
+                          title={`Linked Opportunity: ${prevProspect.name}`}
                         >
-                          ↳ Linked Prospect: {prevProspect.name}
+                          ↳ Linked Opportunity: {prevProspect.name}
                         </button>
                       ) : null;
                     })()}
@@ -731,15 +788,15 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                         <button
                           onClick={(e) => { e.stopPropagation(); onProposalClick(nextProspect); }}
                           className="text-[9px] text-emerald-600 hover:text-emerald-800 hover:underline font-semibold text-left mt-0.5"
-                          title={`Linked Prospect: ${nextProspect.name}`}
+                          title={`Linked Opportunity: ${nextProspect.name}`}
                         >
-                          ↳ Linked Prospect: {nextProspect.name}
+                          ↳ Linked Opportunity: {nextProspect.name}
                         </button>
                       ) : null;
                     })()}
                   </div>
                 </td>
-                <td className="px-6 py-4 text-gray-600">{proposal.client}</td>
+                <td className="px-6 py-4 text-gray-600">{proposal.effectiveDate}</td>
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-1.5">
                     <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${
@@ -755,8 +812,8 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                     )}
                   </div>
                 </td>
-                <td className="px-6 py-4 text-right font-bold text-gray-900">${proposal.expectedRevenueGross.toLocaleString()}</td>
-                <td className="px-6 py-4 text-right font-medium text-gray-600">${proposal.expectedRevenueNet.toLocaleString()}</td>
+                <td className="px-6 py-4 text-gray-600">{proposal.productCategory}</td>
+                <td className="px-6 py-4 text-gray-600">{proposal.productItem}</td>
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-[8px] font-bold text-blue-600">
@@ -765,7 +822,11 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                     <span className="text-xs text-gray-600">{proposal.salesRep}</span>
                   </div>
                 </td>
-                <td className="px-6 py-4 text-xs text-gray-400">{proposal.lastUpdated}</td>
+                <td className="px-6 py-4 text-gray-600">{getOpptyStageColumn(proposal, stageThresholds)}</td>
+                <td className="px-6 py-4 text-right font-bold text-gray-900">${proposal.expectedRevenueGross.toLocaleString()}</td>
+                <td className="px-6 py-4 text-right font-medium text-gray-600">${proposal.expectedRevenueNet.toLocaleString()}</td>
+                <td className="px-6 py-4 text-right text-gray-600">${(proposal.salesRep1GrossAmount ?? 0).toLocaleString()}</td>
+                <td className="px-6 py-4 text-right text-gray-600">${(proposal.salesRep1NetAmount ?? 0).toLocaleString()}</td>
                 <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={(e) => {
@@ -908,7 +969,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                   <span className="text-xs font-bold text-gray-700">Filters</span>
                   {activeFilterCount > 0 && (
                     <button
-                      onClick={() => setActiveFilters({ salesRep: '', salesTeam: '', productItem: '', productTeam: '', productCategory: '', gmiProductGroup: '' })}
+                      onClick={() => { setActiveFilters({ salesRep: '', salesTeam: '', productItem: '', productTeam: '', productCategory: '', gmiProductGroup: '', campaign: '' }); setEffectiveDateFrom(''); setEffectiveDateTo(''); }}
                       className="text-[11px] text-orange-600 hover:text-orange-700 font-medium"
                     >
                       Clear all
@@ -916,6 +977,24 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                   )}
                 </div>
                 <div className="flex flex-col gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Effective Date</label>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="date"
+                        value={effectiveDateFrom}
+                        onChange={(e) => setEffectiveDateFrom(e.target.value)}
+                        className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded bg-white focus:outline-none focus:border-orange-500"
+                      />
+                      <span className="text-[10px] text-gray-400 shrink-0">to</span>
+                      <input
+                        type="date"
+                        value={effectiveDateTo}
+                        onChange={(e) => setEffectiveDateTo(e.target.value)}
+                        className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded bg-white focus:outline-none focus:border-orange-500"
+                      />
+                    </div>
+                  </div>
                   {FILTER_FIELDS.map(({ key, label }) => (
                     <div key={key}>
                       <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">{label}</label>
@@ -973,9 +1052,18 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
             )}
           </div>
           <input type="file" accept=".csv" ref={importInputRef} onChange={handleImportFile} className="hidden" />
+          <button
+            onClick={() => { setBulkRenewSelectedIds(new Set()); setShowBulkRenewModal(true); }}
+            disabled={isLoading}
+            title="Renew every eligible Opportunity (100% + Renewal Required = Yes) in one action"
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
+          >
+            <RefreshCw size={14} />
+            <span>Bulk Renew</span>
+          </button>
           <button onClick={() => onCreateProspect?.(businessTypeFilter)} disabled={isLoading} className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors shadow-sm shadow-orange-500/20 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-orange-500">
             <Plus size={16} />
-            <span>New Prospect</span>
+            <span>New Opportunity</span>
           </button>
         </div>
       </div>
@@ -1054,6 +1142,76 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
               <button onClick={handleExportCsv} className="flex items-center justify-center gap-1.5 px-4 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-bold uppercase text-[9px] rounded-lg shadow-sm">
                 <Download size={12} />
                 <span>Export {selectedProposals.length} row(s) as CSV</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showBulkRenewModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-lg overflow-hidden flex flex-col animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-gray-150 px-5 py-3.5 bg-gray-50">
+              <span className="text-xs font-black uppercase text-gray-900 tracking-wider">Bulk Renew</span>
+              <button
+                type="button"
+                onClick={() => setShowBulkRenewModal(false)}
+                className="p-1 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100"
+                title="Close"
+              >
+                <XCircle size={15} />
+              </button>
+            </div>
+            <div className="p-5">
+              <p className="text-[11px] text-gray-500 mb-3">
+                Opportunities at 100% probability with Renewal Required = Yes, and not already renewed. Select which ones to renew now.
+              </p>
+              {bulkRenewEligible.length === 0 ? (
+                <p className="text-xs text-gray-400 italic py-6 text-center">No Opportunities are currently eligible for Bulk Renew.</p>
+              ) : (
+                <>
+                  <label className="flex items-center gap-2 text-xs font-bold text-gray-700 border-b border-gray-100 pb-2 mb-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={bulkRenewEligible.every(p => bulkRenewSelectedIds.has(p.id))}
+                      onChange={() => setBulkRenewSelectedIds(prev =>
+                        bulkRenewEligible.every(p => prev.has(p.id)) ? new Set() : new Set(bulkRenewEligible.map(p => p.id))
+                      )}
+                    />
+                    Select all ({bulkRenewEligible.length})
+                  </label>
+                  <div className="flex flex-col gap-1 mb-1 max-h-72 overflow-y-auto">
+                    {bulkRenewEligible.map(p => (
+                      <label key={p.id} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer hover:bg-gray-50 rounded px-1 py-1.5">
+                        <input
+                          type="checkbox"
+                          checked={bulkRenewSelectedIds.has(p.id)}
+                          onChange={() => setBulkRenewSelectedIds(prev => {
+                            const next = new Set(prev);
+                            if (next.has(p.id)) next.delete(p.id); else next.add(p.id);
+                            return next;
+                          })}
+                        />
+                        <span className="flex-1 min-w-0">
+                          <span className="font-semibold text-gray-900">{p.name}</span>
+                          <span className="text-gray-400"> · {p.client} · {p.productItem} · Eff. {p.effectiveDate || '—'}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="border-t border-gray-150 px-5 py-3 bg-gray-50 flex justify-end gap-2">
+              <button onClick={() => setShowBulkRenewModal(false)} className="px-4 py-1.5 bg-white hover:bg-gray-100 border border-gray-300 text-gray-700 font-bold uppercase text-[9px] rounded-lg">
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkRenewConfirm}
+                disabled={bulkRenewSelectedIds.size === 0}
+                className="flex items-center justify-center gap-1.5 px-4 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-bold uppercase text-[9px] rounded-lg shadow-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-orange-600"
+              >
+                <RefreshCw size={12} />
+                <span>Renew {bulkRenewSelectedIds.size} selected</span>
               </button>
             </div>
           </div>

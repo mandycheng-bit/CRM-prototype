@@ -202,7 +202,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
     if (selectedProposals.length === 0) { alert('Select at least one row to export (see the checkboxes in List view).'); return; }
     const header = fields.map(f => toCsvCell(f.label)).join(',');
     const dataRows = selectedProposals.map(p => fields.map(f => toCsvCell(getExportValue(p, f.key))).join(','));
-    downloadFile(`Prospect_Export_${selectedProposals.length}.csv`, [header, ...dataRows].join('\r\n'), 'text/csv;charset=utf-8;');
+    downloadFile(`Opportunity_Export_${selectedProposals.length}.csv`, [header, ...dataRows].join('\r\n'), 'text/csv;charset=utf-8;');
     setShowExportPanel(false);
   };
 
@@ -335,7 +335,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
 
   const handleDownloadImportTemplate = () => {
     const csv = [IMPORT_TEMPLATE_COLUMNS.map(toCsvCell).join(','), IMPORT_TEMPLATE_SAMPLE_ROW.map(toCsvCell).join(',')].join('\r\n');
-    downloadFile('Prospect_Import_Template.csv', csv, 'text/csv;charset=utf-8;');
+    downloadFile('Opportunity_Import_Template.csv', csv, 'text/csv;charset=utf-8;');
   };
 
   const fieldValueGetters: Record<FilterKey, (p: Proposal) => string> = {
@@ -601,8 +601,8 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                   />
                 </th>
               )}
-              <th className="px-6 py-4 text-left">Prospect ID</th>
-              <th className="px-6 py-4 text-left">Prospect Name</th>
+              <th className="px-6 py-4 text-left">Opportunity ID</th>
+              <th className="px-6 py-4 text-left">Opportunity Name</th>
               <th className="px-6 py-4 text-left">Company</th>
               <th className="px-6 py-4 text-left">Insurer</th>
               <th className="px-6 py-4 text-left">Product (Class)</th>
@@ -645,9 +645,9 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                         <button
                           onClick={(e) => { e.stopPropagation(); onProposalClick(prevProspect); }}
                           className="text-[9px] text-blue-500 hover:text-blue-700 hover:underline font-semibold text-left mt-0.5"
-                          title={`Linked Prospect: ${prevProspect.name}`}
+                          title={`Linked Opportunity: ${prevProspect.name}`}
                         >
-                          ↳ Linked Prospect: {prevProspect.name}
+                          ↳ Linked Opportunity: {prevProspect.name}
                         </button>
                       ) : null;
                     })()}
@@ -657,9 +657,9 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
                         <button
                           onClick={(e) => { e.stopPropagation(); onProposalClick(nextProspect); }}
                           className="text-[9px] text-emerald-600 hover:text-emerald-800 hover:underline font-semibold text-left mt-0.5"
-                          title={`Linked Prospect: ${nextProspect.name}`}
+                          title={`Linked Opportunity: ${nextProspect.name}`}
                         >
-                          ↳ Linked Prospect: {nextProspect.name}
+                          ↳ Linked Opportunity: {nextProspect.name}
                         </button>
                       ) : null;
                     })()}
@@ -943,7 +943,7 @@ const ProposalPipeline: React.FC<ProposalPipelineProps> = ({ onProposalClick, pr
           <input type="file" accept=".csv" ref={importInputRef} onChange={handleImportFile} className="hidden" />
           <button onClick={() => onCreateProspect?.(businessTypeFilter)} className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors shadow-sm shadow-orange-500/20 whitespace-nowrap">
             <Plus size={16} />
-            <span>New Prospect</span>
+            <span>New Opportunity</span>
           </button>
         </div>
       </div>

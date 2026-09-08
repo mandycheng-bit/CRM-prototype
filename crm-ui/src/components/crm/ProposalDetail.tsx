@@ -44,6 +44,51 @@ export const resolveCompanyMeta = (label: string) => {
     ? { entityType: match.entityType, source: match.source, masterType: match.masterType }
     : { entityType: 'Company' as const, source: 'Customer' as const, masterType: 'Customer' as MasterType };
 };
+
+// Shared with ProposalPipeline's Bulk Renew (TASK-16's per-record Renew logic,
+// reused so both entry points create a renewal the same way). Only ever called
+// on an already-saved record at 100% probability with no pending draft, so
+// reading straight off `source` (rather than a draft's editedOpportunity) is safe.
+// idSuffix disambiguates IDs generated within the same millisecond during a bulk batch.
+export const buildRenewalProposal = (source: Proposal, idSuffix: string = ''): Proposal => {
+  let nextEffectiveDate = source.effectiveDate;
+  const parsedDate = new Date(source.effectiveDate);
+  if (!isNaN(parsedDate.getTime())) {
+    parsedDate.setFullYear(parsedDate.getFullYear() + 1);
+    nextEffectiveDate = parsedDate.toISOString().split('T')[0];
+  }
+  const entryLevel = 75; // Renewal entry level — matches "+ New Prospect"'s blank-record default (App.tsx)
+  const today = new Date().toISOString().split('T')[0];
+  const renewalId = `P-REN-${Date.now().toString().slice(-6)}${idSuffix}`;
+  return {
+    ...source,
+    id: renewalId,
+    name: `${source.name} (Renewal)`,
+    stage: 'Draft',
+    probability: entryLevel,
+    businessType: 'Renewal',
+    campaign: '',
+    linkedPreviousProspectId: source.id,
+    linkedNextProspectId: undefined,
+    effectiveDate: nextEffectiveDate,
+    createdDate: today,
+    lastUpdated: today,
+    stageLastUpdated: today,
+    remarks: `Auto-created renewal from ${source.id} upon reaching 100%.`,
+    // Gross Amount = Oppty Gross Amount × split % — both carried over unchanged
+    // via the `...source` spread above, so Gross Amount itself needs no override
+    // here. Net Amount = Gross × Probability, and Probability is already known
+    // (75%) at creation time, so it recomputes immediately rather than sitting
+    // at a stale 0 until the next unrelated save.
+    salesRep1NetAmount: (source.salesRep1GrossAmount ?? 0) * (entryLevel / 100),
+    salesRep2NetAmount: (source.salesRep2GrossAmount ?? 0) * (entryLevel / 100),
+    salesRep3NetAmount: (source.salesRep3GrossAmount ?? 0) * (entryLevel / 100),
+    opptyRejectDate: undefined,
+    opptyRejectFrequency: 0,
+    renewalRequired: undefined,
+    childProposals: [],
+  };
+};
 const CAMPAIGN_OPTIONS = MOCK_CAMPAIGNS.filter(c => c.active).map(c => c.name);
 
 // "Member First Name"/"Member Last Name" were removed from Product Configuration's
@@ -778,6 +823,8 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     productItem: initialProductItem,
     detailedProductItem: proposal.detailedProductItem || '',
     businessType: proposal.businessType === 'Renewal' ? 'Renewal' : 'NB',
+    // No pre-selection — this is a data-entry field, not a filter/system default.
+    renewalRequired: proposal.renewalRequired || '',
     campaign: (isNew || proposal.linkedPreviousProspectId) ? (proposal.campaign || '') : (proposal.campaign || CAMPAIGN_OPTIONS[0]),
     // Sales Assignment — a single rep always holds the full 100% split
     salesRep1: isNew ? '' : (proposal.salesRep || 'Sales Rep A'),
@@ -1540,6 +1587,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       opptyRejectDate: editedOpportunity.opptyRejectDate,
       opptyRejectFrequency: editedOpportunity.opptyRejectFrequency,
       productFileRequirements: editedOpportunity.productFileRequirements,
+      renewalRequired: (editedOpportunity.renewalRequired || undefined) as Proposal['renewalRequired'],
     };
 
     // Data-loss guard (see CLAUDE.md "Save Payload Completeness" rule): every
@@ -1564,6 +1612,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       ['Remark', editedOpportunity.opportunityNotes, updatedProposal.remarks],
       ['Product Item', editedOpportunity.productItem, updatedProposal.productItem],
       ['Product Category', editedOpportunity.productCategory, updatedProposal.productCategory],
+      ['Renewal Required', editedOpportunity.renewalRequired || undefined, updatedProposal.renewalRequired],
     ];
     const unsavedFields = editableFieldChecks
       .filter(([, draftValue, savedValue]) => JSON.stringify(draftValue) !== JSON.stringify(savedValue))
@@ -1596,6 +1645,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       ['Product Item', 'productItem'],
       ['Product Category', 'productCategory'],
       ['Detailed Product Item', 'detailedProductItem'],
+      ['Renewal Required', 'renewalRequired'],
     ];
     const auditTimestamp = new Date().toISOString().slice(0, 10);
     const newAudits: OpportunityAuditRecord[] = auditFields
@@ -1696,50 +1746,10 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   // renewal flow: this page has no child-proposal/policy pipeline, so it triggers
   // directly off the Opportunity reaching 100%.
   const handleRenewClick = () => {
-    const today = new Date().toISOString().split('T')[0];
-    let nextEffectiveDate = proposal.effectiveDate;
-    const parsedDate = new Date(proposal.effectiveDate);
-    if (!isNaN(parsedDate.getTime())) {
-      parsedDate.setFullYear(parsedDate.getFullYear() + 1);
-      nextEffectiveDate = parsedDate.toISOString().split('T')[0];
-    }
-    const entryLevel = 75; // Renewal entry level — matches "+ New Prospect"'s blank-record default (App.tsx)
-    const renewalId = `P-REN-${Date.now().toString().slice(-6)}`;
-    const renewalProspect: Proposal = {
-      ...proposal,
-      id: renewalId,
-      name: `${editedOpportunity.name} (Renewal)`,
-      stage: 'Draft',
-      probability: entryLevel,
-      businessType: 'Renewal',
-      client: editedOpportunity.company,
-      salesRep: editedOpportunity.salesRep1,
-      productCategory: editedOpportunity.productCategory,
-      productItem: editedOpportunity.productItem,
-      detailedProductItem: editedOpportunity.detailedProductItem,
-      campaign: '',
-      linkedPreviousProspectId: proposal.id,
-      linkedNextProspectId: undefined,
-      effectiveDate: nextEffectiveDate,
-      createdDate: today,
-      lastUpdated: today,
-      stageLastUpdated: today,
-      remarks: `Auto-created renewal from ${proposal.id} upon reaching 100%.`,
-      // Gross Amount = Oppty Gross Amount × split % — both carried over unchanged
-      // via the `...proposal` spread above, so Gross Amount itself needs no
-      // override here. Net Amount = Gross × Probability, and Probability is
-      // already known (75%) at creation time, so it recomputes immediately
-      // rather than sitting at a stale 0 until the next unrelated save.
-      salesRep1NetAmount: editedOpportunity.salesRep1GrossAmount * (entryLevel / 100),
-      salesRep2NetAmount: editedOpportunity.salesRep2GrossAmount * (entryLevel / 100),
-      salesRep3NetAmount: editedOpportunity.salesRep3GrossAmount * (entryLevel / 100),
-      opptyRejectDate: undefined,
-      opptyRejectFrequency: 0,
-      childProposals: [],
-    };
+    const renewalProspect = buildRenewalProposal(proposal);
     onCreateRenewal?.(renewalProspect);
-    onSave?.({ ...proposal, linkedNextProspectId: renewalId });
-    showToast(`Renewal Prospect "${renewalProspect.name}" (${renewalId}) created, linked back to this Prospect.`);
+    onSave?.({ ...proposal, linkedNextProspectId: renewalProspect.id });
+    showToast(`Renewal Opportunity "${renewalProspect.name}" (${renewalProspect.id}) created, linked back to this Opportunity.`);
   };
 
   // Undoes a Renew, from the renewal record's own side: clears the original
@@ -1757,7 +1767,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     }
     onDelete?.(proposal.id);
     onBack();
-    showToast('Renewal reverted — this Prospect was deleted.');
+    showToast('Renewal reverted — this Opportunity was deleted.');
   };
 
   // Product File Requirements — entirely config-driven (Product Configuration module's
@@ -2128,6 +2138,13 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                   </FieldView>
                   <FieldView label="Effective Date" editing={isEditMode} viewValue={editedOpportunity.effectiveDate1 || '—'}>
                     <input type="date" min="1900-01-01" max="2100-12-31" value={editedOpportunity.effectiveDate1} onChange={e => setEditedOpportunity({...editedOpportunity, effectiveDate1: e.target.value})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50 font-mono" />
+                  </FieldView>
+                  <FieldView label="Renewal Required?" editing={isEditMode} viewValue={editedOpportunity.renewalRequired || '—'}>
+                    <select value={editedOpportunity.renewalRequired} onChange={e => setEditedOpportunity({...editedOpportunity, renewalRequired: e.target.value as typeof editedOpportunity.renewalRequired})} className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-gray-50">
+                      <option value="">Please Select</option>
+                      <option value="Yes">Yes</option>
+                      <option value="No">No</option>
+                    </select>
                   </FieldView>
                   <div className="md:col-span-3">
                     <div className="flex items-center gap-2 mb-1">
@@ -2690,7 +2707,7 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       <ConfirmDialog
         open={pendingRevert}
         title="Revert this renewal?"
-        message="This permanently deletes this Prospect and lets the original Opportunity be renewed again. This cannot be undone."
+        message="This permanently deletes this Opportunity and lets the original Opportunity be renewed again. This cannot be undone."
         confirmLabel="Revert"
         confirmVariant="danger"
         onConfirm={confirmRevertRenewal}
