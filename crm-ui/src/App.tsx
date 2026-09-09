@@ -13,7 +13,7 @@ import { ConfirmDialog } from './components/ConfirmDialog';
 import { Toast, useToast } from './components/Toast';
 import { MOCK_PROPOSALS } from './constants';
 import type { Proposal } from './types';
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { ChevronRight } from 'lucide-react';
 
 // Blank starting point for "+ New Prospect" — every field ProposalDetail's Save
@@ -52,8 +52,26 @@ const buildBlankProposal = (businessType: 'NB' | 'Renewal'): Proposal => {
   };
 };
 
+// Deep links for the Vercel URL scheme (e.g. https://…/prospects-2027): pick the initial module from the
+// path and keep the path in step with the module. crm-ui has no router; vercel.json rewrites every path to
+// index.html so these links serve the app instead of a 404.
+const MODULE_PATHS: Partial<Record<ModuleId, string>> = {
+  'perspective-pipeline': '/prospects-2026',
+  'prospect-2027': '/prospects-2027',
+  'benchmark': '/benchmark',
+};
+const moduleFromPath = (): ModuleId => {
+  const path = typeof window === 'undefined' ? '' : window.location.pathname.replace(/\/+$/, '');
+  const hit = (Object.entries(MODULE_PATHS) as [ModuleId, string][]).find(([, p]) => path === p || path.startsWith(p + '/'));
+  return hit ? hit[0] : 'perspective-pipeline';
+};
+
 export default function App() {
-  const [activeModule, setActiveModule] = useState<ModuleId>('perspective-pipeline');
+  const [activeModule, setActiveModule] = useState<ModuleId>(moduleFromPath);
+  useEffect(() => {
+    const path = MODULE_PATHS[activeModule];
+    if (path && window.location.pathname !== path) window.history.replaceState(null, '', path);
+  }, [activeModule]);
   const [proposals, setProposals] = useState<Proposal[]>(MOCK_PROPOSALS);
   const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
   const [isNewProspect, setIsNewProspect] = useState(false);
