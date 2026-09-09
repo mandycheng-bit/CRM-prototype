@@ -6,7 +6,7 @@ import {
   XCircle, X, History, FileCode, Check, Send, Upload, FileUp,
   Info, Activity as ActivityIcon, Edit, User, HelpCircle, Briefcase,
   ChevronRight, ChevronDown, Layers, FileSpreadsheet, Star, Play, Award, ClipboardCheck,
-  RefreshCw, Lock, Search, Archive
+  RefreshCw, Lock, Search, Archive, ArrowUpDown
 } from 'lucide-react';
 import type { Proposal, BenefitRow, ProductFileRequirement, ChildProposal, UploadedRequirementFile } from '../../types';
 import { MOCK_COMPANIES, MOCK_INDIVIDUALS, MOCK_LEADS, MOCK_CAMPAIGNS, INITIAL_MPF_SCHEMES, INITIAL_EMPLOYER_OPTIONS } from '../../constants';
@@ -39,6 +39,13 @@ const resolveCompanyMeta = (label: string) => {
     ? { entityType: match.entityType, source: match.source, masterType: match.masterType }
     : { entityType: 'Company' as const, source: 'Customer' as const, masterType: 'Customer' as MasterType };
 };
+// Proposer / Policy Owner lookup for the Basic-Info block — live GMI offers a dropdown of customer IDs
+// (e.g. O-000038 / B-000162) and auto-fills the owner name read-only from the selection.
+const POLICY_OWNER_OPTIONS = COMPANY_INDIVIDUAL_OPTIONS.filter(o => o.source === 'Customer');
+// Sales code master for the Secondary / Tertiary Sales Code dropdowns (live picks a code, e.g. AMHT, and
+// auto-fills the sales name read-only). Derived from the same SALES_REPS list the Oppty split uses; codes
+// follow the seeded 'SR-A01' convention.
+const SALES_CODE_OPTIONS = SALES_REPS.map(n => ({ code: `SR-${n.replace(/^Sales Rep\s*/i, '').toUpperCase()}01`, name: n }));
 const CAMPAIGN_OPTIONS = MOCK_CAMPAIGNS.filter(c => c.active).map(c => c.name);
 
 // "Member First Name"/"Member Last Name" were removed from Product Configuration's
@@ -1250,9 +1257,13 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
   const [empClassCensus, setEmpClassCensus] = useState<EmpClassRow[]>([
     { id: 'ec1', gmiResearchSumClass: 'UNI Class', customerPlanClass: 'Plan 1', emp: 7, spouse: 0, child: 0, other: 0 }
   ]);
-  const [empDraft, setEmpDraft] = useState({ gmiResearchSumClass: 'UNI Class', customerPlanClass: '', emp: '', spouse: '', child: '', other: '' });
+  // Entry row starts empty like live ("Choose GMI Res'ch Sum Class Category" placeholder); Add Plan needs
+  // both the category and the Customer Plan Class.
+  const EMPTY_EMP_DRAFT = { gmiResearchSumClass: '', customerPlanClass: '', emp: '', spouse: '', child: '', other: '' };
+  const [empDraft, setEmpDraft] = useState(EMPTY_EMP_DRAFT);
+  const canAddEmpClassRow = Boolean(empDraft.gmiResearchSumClass && empDraft.customerPlanClass.trim());
   const addEmpClassRow = () => {
-    if (!empDraft.customerPlanClass.trim()) return;
+    if (!canAddEmpClassRow) return;
     setEmpClassCensus(prev => [...prev, {
       id: `ec_${Date.now()}`,
       gmiResearchSumClass: empDraft.gmiResearchSumClass,
@@ -1262,11 +1273,34 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
       child: Number(empDraft.child) || 0,
       other: Number(empDraft.other) || 0
     }]);
-    setEmpDraft({ gmiResearchSumClass: empDraft.gmiResearchSumClass, customerPlanClass: '', emp: '', spouse: '', child: '', other: '' });
+    setEmpDraft(EMPTY_EMP_DRAFT);
   };
   const updateEmpClassRow = (id: string, patch: Partial<EmpClassRow>) =>
     setEmpClassCensus(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r));
   const deleteEmpClassRow = (id: string) => setEmpClassCensus(prev => prev.filter(r => r.id !== id));
+  // Live "Remove All" — clears every employee-class plan row after a confirm.
+  const clearEmpClassRows = () => {
+    if (empClassCensus.length === 0) return;
+    if (!confirm(`Remove all ${empClassCensus.length} Employee Class plan row(s)?`)) return;
+    setEmpClassCensus([]);
+  };
+  // Sortable columns — the live table shows sort arrows on Customer Plan Class + the four count columns.
+  type EmpClassSortKey = 'customerPlanClass' | 'emp' | 'spouse' | 'child' | 'other';
+  const [empClassSort, setEmpClassSort] = useState<{ key: EmpClassSortKey; dir: 'asc' | 'desc' } | null>(null);
+  const toggleEmpClassSort = (key: EmpClassSortKey) =>
+    setEmpClassSort(prev => (prev && prev.key === key) ? (prev.dir === 'asc' ? { key, dir: 'desc' } : null) : { key, dir: 'asc' });
+  const sortedEmpClassCensus = useMemo(() => {
+    if (!empClassSort) return empClassCensus;
+    const { key, dir } = empClassSort;
+    const sign = dir === 'asc' ? 1 : -1;
+    return [...empClassCensus].sort((a, b) => {
+      const av = a[key];
+      const bv = b[key];
+      return (typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv))) * sign;
+    });
+  }, [empClassCensus, empClassSort]);
+  // Secondary / Tertiary Sales Code (Optional) — both collapsed by default like the live Basic-Info step.
+  const [openSalesTiers, setOpenSalesTiers] = useState<{ Secondary: boolean; Tertiary: boolean }>({ Secondary: false, Tertiary: false });
 
   // Selected Child Proposal State (null = Opportunity Page, object = Proposal Workspace)
   const [selectedChild, setSelectedChild] = useState<ChildProposal | null>(null);
@@ -1721,6 +1755,62 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
     setSelectedChild({ ...child, odooPushed: true, odooPushDate: new Date().toISOString().slice(0, 10) });
     setAuditLogs(prev => [{ id: `A${prev.length + 1}`, action: 'Finalized → pushed to Odoo', user: editedOpportunity.salesRep1 || 'Sales', date: new Date().toISOString().replace('T', ' ').substring(0, 16), details: `Quotation pushed to Odoo Sales for ${child.id}. Premium state: Presales → Quotation.` }, ...prev]);
     alert('Proposal finalized. Quotation pushed to Odoo (prototype mock). Premium state advanced: Presales → Quotation.');
+  };
+
+  // Basic-Info footer — mirrors the live Edit-Proposal action bar (Lost / Validate / Next / Save /
+  // Save & Exit / Go to Finalised). Tabs stay the IA: "Next" only moves to the Coverage tab and nothing
+  // is gated behind Validate; Save writes the open proposal back into the Oppty's proposal list.
+  const nowStamp = () => {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; // local time, not UTC
+  };
+  const validateBasicInfo = (child: ChildProposal): string[] => {
+    const issues: string[] = [];
+    if (!child.vendor) issues.push('Insurer is required.');
+    if (!child.renewRequired) issues.push('Policy Renew Required must be set to Yes or No.');
+    const expiry = child.expiryDate || child.endDate;
+    if (child.effectiveDate && expiry && expiry < child.effectiveDate) issues.push('Expiry Date is earlier than Effective Date.');
+    if (!child.proposerId) issues.push('Proposer/Policy Owner ID is not selected.');
+    const salesPct = (child.salesPercentage ?? 100) + (child.salesPercentage2 ?? 0) + (child.salesPercentage3 ?? 0);
+    if (salesPct !== 100) issues.push(`Sales percentages total ${salesPct}% — must equal 100%.`);
+    if (empClassCensus.length === 0) issues.push('Add at least one Employee Class plan row.');
+    return issues;
+  };
+  const handleValidateBasicInfo = () => {
+    if (!selectedChild) return;
+    const issues = validateBasicInfo(selectedChild);
+    alert(issues.length === 0
+      ? 'Validate passed — Basic Info has no missing required fields.'
+      : `Validate found ${issues.length} issue(s):\n\n• ${issues.join('\n• ')}`);
+  };
+  const handleSaveProposal = (exitAfter: boolean) => {
+    if (!selectedChild) return;
+    const saved: ChildProposal = { ...selectedChild, lastSavedAt: nowStamp(), lastUpdated: nowStamp().slice(0, 10) };
+    setChildProposals(prev => prev.map(c => c.id === saved.id ? saved : c));
+    setIsProposalEditMode(false);
+    setAuditLogs(prev => [{ id: `A${prev.length + 1}`, action: exitAfter ? 'Proposal Saved & Exited' : 'Proposal Saved', user: editedOpportunity.salesRep1 || 'Sales', date: nowStamp(), details: `${saved.id} saved from the Basic Info step.` }, ...prev]);
+    if (exitAfter) {
+      setSelectedChild(null);
+      setActiveProspectTab('Opportunity');
+    } else {
+      setSelectedChild(saved);
+    }
+  };
+  const handleMarkLost = () => {
+    if (!selectedChild) return;
+    if (selectedChild.status === 'Converted to Policy') {
+      alert('This proposal has already been converted to a policy and cannot be marked Lost.');
+      return;
+    }
+    const reason = prompt('Mark this proposal as Lost — reason (optional):');
+    if (reason === null) return;
+    const trimmed = reason.trim();
+    const lost: ChildProposal = { ...selectedChild, status: 'Declined', lostReason: trimmed || undefined, lastSavedAt: nowStamp() };
+    setChildProposals(prev => prev.map(c => c.id === lost.id ? lost : c));
+    setSelectedChild(lost);
+    setIsProposalEditMode(false);
+    setAuditLogs(prev => [{ id: `A${prev.length + 1}`, action: 'Proposal Marked Lost', user: editedOpportunity.salesRep1 || 'Sales', date: nowStamp(), details: `${lost.id} marked Lost (status → Declined)${trimmed ? `: ${trimmed}` : ''}.` }, ...prev]);
   };
 
   const handleExportMcrReport = (child: ChildProposal) => {
@@ -3604,60 +3694,154 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                         {renewRequiredError && <p className="mt-1 text-[10px] text-red-500 font-semibold">Renew Required must be set before converting to policy.</p>}
                       </div>
                       <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Proposer / Owner ID</label>
+                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Proposer/Policy Owner ID</label>
                         {isProposalEditMode ? (
-                          <input type="text" value={selectedChild.proposerId || ''} onChange={e => setSelectedChild({...selectedChild, proposerId: e.target.value})} placeholder="e.g. O-000038" className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                          <select
+                            value={selectedChild.proposerId || ''}
+                            onChange={e => {
+                              const owner = POLICY_OWNER_OPTIONS.find(o => o.id === e.target.value);
+                              setSelectedChild({ ...selectedChild, proposerId: e.target.value || undefined, proposerName: owner ? owner.label : (e.target.value ? selectedChild.proposerName : undefined) });
+                            }}
+                            className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                          >
+                            <option value="">Choose Proposer/Policy Owner ID</option>
+                            {selectedChild.proposerId && !POLICY_OWNER_OPTIONS.some(o => o.id === selectedChild.proposerId) && (
+                              <option value={selectedChild.proposerId}>{selectedChild.proposerId}{selectedChild.proposerName ? ` — ${selectedChild.proposerName}` : ''}</option>
+                            )}
+                            {POLICY_OWNER_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.id} — {o.label}</option>)}
+                          </select>
                         ) : (
                           <input type="text" value={selectedChild.proposerId || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 font-mono cursor-not-allowed outline-none" />
                         )}
                       </div>
                       <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Proposer / Owner Name</label>
-                        {isProposalEditMode ? (
-                          <input type="text" value={selectedChild.proposerName || ''} onChange={e => setSelectedChild({...selectedChild, proposerName: e.target.value})} placeholder="Policy owner legal name" className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
-                        ) : (
-                          <input type="text" value={selectedChild.proposerName || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 cursor-not-allowed outline-none" />
-                        )}
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Sales Code 2</label>
-                        {isProposalEditMode ? (
-                          <input type="text" value={selectedChild.salesCode2 || ''} onChange={e => setSelectedChild({...selectedChild, salesCode2: e.target.value})} placeholder="Secondary" className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
-                        ) : (
-                          <input type="text" value={selectedChild.salesCode2 || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 font-mono cursor-not-allowed outline-none" />
-                        )}
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Sales Code 3</label>
-                        {isProposalEditMode ? (
-                          <input type="text" value={selectedChild.salesCode3 || ''} onChange={e => setSelectedChild({...selectedChild, salesCode3: e.target.value})} placeholder="Tertiary" className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
-                        ) : (
-                          <input type="text" value={selectedChild.salesCode3 || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 font-mono cursor-not-allowed outline-none" />
-                        )}
+                        <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">Proposer/Policy Owner Name</label>
+                        <input type="text" value={selectedChild.proposerName || '—'} readOnly title="Auto-filled from the selected Proposer/Policy Owner ID" className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 cursor-not-allowed outline-none" />
                       </div>
                     </div>
+
+                    {/* Secondary / Tertiary Sales Code (Optional) — collapsible blocks, as on the live Basic-Info step.
+                        Code picks from the sales master and auto-fills the name read-only; an empty tier can be carried
+                        from the Oppty's Rep 2 / Rep 3 split in one click. */}
+                    {([
+                      { tier: 'Secondary' as const, codeKey: 'salesCode2' as const, nameKey: 'salesName2' as const, pctKey: 'salesPercentage2' as const, opptyRep: editedOpportunity.salesRep2, opptySplit: editedOpportunity.split2 },
+                      { tier: 'Tertiary' as const, codeKey: 'salesCode3' as const, nameKey: 'salesName3' as const, pctKey: 'salesPercentage3' as const, opptyRep: editedOpportunity.salesRep3, opptySplit: editedOpportunity.split3 },
+                    ]).map(t => {
+                      const code = selectedChild[t.codeKey];
+                      const name = selectedChild[t.nameKey];
+                      const pct = selectedChild[t.pctKey];
+                      const isOpen = openSalesTiers[t.tier];
+                      const carry = t.opptyRep ? SALES_CODE_OPTIONS.find(o => o.name === t.opptyRep) : undefined;
+                      const canCarry = isProposalEditMode && !code && !name && !!t.opptyRep;
+                      return (
+                        <div key={t.tier} className="mt-4 border-t border-gray-100 pt-3">
+                          <button type="button" onClick={() => setOpenSalesTiers(prev => ({ ...prev, [t.tier]: !prev[t.tier] }))} aria-expanded={isOpen} className="w-full flex items-center justify-between text-left">
+                            <span className="flex items-center gap-2 text-[11px] font-black text-gray-700 uppercase tracking-wider">
+                              <User size={13} className="text-gray-500" />
+                              <span>{t.tier} Sales Code <span className="font-medium text-gray-400 normal-case tracking-normal">(Optional)</span></span>
+                              {(code || name) && (
+                                <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[9px] font-mono normal-case tracking-normal">
+                                  {code || '—'}{name ? ` · ${name}` : ''}{pct != null ? ` · ${pct}%` : ''}
+                                </span>
+                              )}
+                            </span>
+                            <ChevronDown size={14} className={`text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                          </button>
+                          {isOpen && (
+                            <div className="mt-3 space-y-2">
+                              {canCarry && (
+                                <button type="button" onClick={() => setSelectedChild({ ...selectedChild, [t.codeKey]: carry?.code, [t.nameKey]: t.opptyRep, [t.pctKey]: t.opptySplit } as ChildProposal)} className="text-[10px] px-2 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded font-semibold hover:bg-emerald-100 transition-colors">
+                                  Carry from Opportunity: {t.opptyRep}{t.opptySplit != null ? ` · ${t.opptySplit}%` : ''}
+                                </button>
+                              )}
+                              <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+                                <div className="md:col-span-2">
+                                  <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">{t.tier} Sales Code</label>
+                                  {isProposalEditMode ? (
+                                    <select
+                                      value={code || ''}
+                                      onChange={e => {
+                                        const opt = SALES_CODE_OPTIONS.find(o => o.code === e.target.value);
+                                        setSelectedChild({ ...selectedChild, [t.codeKey]: e.target.value || undefined, [t.nameKey]: opt ? opt.name : (e.target.value ? name : undefined) } as ChildProposal);
+                                      }}
+                                      className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                                    >
+                                      <option value="">{t.tier} Sales Code</option>
+                                      {code && !SALES_CODE_OPTIONS.some(o => o.code === code) && <option value={code}>{code}{name ? ` — ${name}` : ''}</option>}
+                                      {SALES_CODE_OPTIONS.map(o => <option key={o.code} value={o.code}>{o.code} — {o.name}</option>)}
+                                    </select>
+                                  ) : (
+                                    <input type="text" value={code || '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 font-mono cursor-not-allowed outline-none" />
+                                  )}
+                                </div>
+                                <div className="md:col-span-3">
+                                  <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">{t.tier} Sales Name</label>
+                                  <input type="text" value={name || '—'} readOnly title={`Auto-filled from the selected ${t.tier} Sales Code`} className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 cursor-not-allowed outline-none" />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] font-black text-gray-400 uppercase block mb-1">{t.tier} Sales Percentage</label>
+                                  {isProposalEditMode ? (
+                                    <div className="relative">
+                                      <input type="number" min={0} max={100} value={pct ?? ''} onChange={e => setSelectedChild({ ...selectedChild, [t.pctKey]: e.target.value === '' ? undefined : Math.min(100, Math.max(0, Number(e.target.value))) } as ChildProposal)} placeholder="0" className="w-full pl-2.5 pr-7 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+                                    </div>
+                                  ) : (
+                                    <input type="text" value={pct != null ? `${pct}%` : '—'} readOnly className="w-full px-2.5 py-1.5 border border-gray-100 rounded text-xs bg-gray-50 text-gray-600 font-mono cursor-not-allowed outline-none" />
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
 
-                  {/* Employee Class Census — mirrors the live GMI Basic-Info "Employee Class" block */}
+                  {/* Employee Class — mirrors the live GMI Basic-Info "Employee Class" block (labelled entry row, Add Plan / Remove All, sortable counts) */}
                   <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-5">
                     <div className="flex items-center gap-2 mb-4 border-b border-gray-100 pb-2">
                       <div className="p-1 bg-teal-50 rounded text-teal-600"><Users size={14} /></div>
-                      <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Employee Class Census</h3>
+                      <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Employee Class</h3>
                       <span className="px-2 py-0.5 bg-teal-50 text-teal-800 text-[9px] font-mono border border-teal-200 rounded font-bold uppercase tracking-wider">GMI Research Sum Class</span>
+                      <span className="ml-auto text-[10px] text-gray-400">{empClassCensus.length} plan row{empClassCensus.length === 1 ? '' : 's'}</span>
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-8 gap-2 mb-3">
-                      <select value={empDraft.gmiResearchSumClass} onChange={e => setEmpDraft({...empDraft, gmiResearchSumClass: e.target.value})} className="md:col-span-2 px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-teal-500 outline-none">
-                        {GMI_RESEARCH_SUM_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                      <input type="text" value={empDraft.customerPlanClass} onChange={e => setEmpDraft({...empDraft, customerPlanClass: e.target.value})} placeholder="Customer Plan Class" className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none" />
-                      <input type="number" value={empDraft.emp} onChange={e => setEmpDraft({...empDraft, emp: e.target.value})} placeholder="EE #" className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-teal-500 outline-none" />
-                      <input type="number" value={empDraft.spouse} onChange={e => setEmpDraft({...empDraft, spouse: e.target.value})} placeholder="SP #" className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-teal-500 outline-none" />
-                      <input type="number" value={empDraft.child} onChange={e => setEmpDraft({...empDraft, child: e.target.value})} placeholder="CH #" className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-teal-500 outline-none" />
-                      <input type="number" value={empDraft.other} onChange={e => setEmpDraft({...empDraft, other: e.target.value})} placeholder="OH #" className="px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-teal-500 outline-none" />
-                      <button onClick={addEmpClassRow} disabled={!empDraft.customerPlanClass.trim()} className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded text-xs font-bold flex items-center justify-center gap-1 transition-colors">
-                        <Plus size={13} /><span>Add</span>
-                      </button>
+                    <div className="grid grid-cols-2 md:grid-cols-12 gap-2 mb-3 items-end">
+                      <div className="col-span-2 md:col-span-3">
+                        <label className="text-[10px] font-black text-gray-500 uppercase block mb-1">GMI Research Sum Class Category</label>
+                        <select value={empDraft.gmiResearchSumClass} onChange={e => setEmpDraft({...empDraft, gmiResearchSumClass: e.target.value})} className={`w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white focus:border-teal-500 outline-none ${empDraft.gmiResearchSumClass ? 'text-gray-800' : 'text-gray-400'}`}>
+                          <option value="">Choose GMI Res'ch Sum Class Category</option>
+                          {GMI_RESEARCH_SUM_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div className="col-span-2 md:col-span-2">
+                        <label className="text-[10px] font-black text-gray-500 uppercase block mb-1">Customer Plan Class</label>
+                        <input type="text" value={empDraft.customerPlanClass} onChange={e => setEmpDraft({...empDraft, customerPlanClass: e.target.value})} onKeyDown={e => { if (e.key === 'Enter') addEmpClassRow(); }} placeholder="e.g. Plan 1" className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 focus:border-teal-500 focus:ring-1 focus:ring-teal-500 outline-none" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-gray-500 uppercase block mb-1">EE #</label>
+                        <input type="number" min={0} value={empDraft.emp} onChange={e => setEmpDraft({...empDraft, emp: e.target.value})} placeholder="0" className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-teal-500 outline-none" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-gray-500 uppercase block mb-1">SP #</label>
+                        <input type="number" min={0} value={empDraft.spouse} onChange={e => setEmpDraft({...empDraft, spouse: e.target.value})} placeholder="0" className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-teal-500 outline-none" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-gray-500 uppercase block mb-1">CH #</label>
+                        <input type="number" min={0} value={empDraft.child} onChange={e => setEmpDraft({...empDraft, child: e.target.value})} placeholder="0" className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-teal-500 outline-none" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-gray-500 uppercase block mb-1">OH #</label>
+                        <input type="number" min={0} value={empDraft.other} onChange={e => setEmpDraft({...empDraft, other: e.target.value})} placeholder="0" className="w-full px-2.5 py-1.5 border border-gray-200 rounded text-xs bg-white text-gray-800 font-mono focus:border-teal-500 outline-none" />
+                      </div>
+                      <div className="col-span-2 md:col-span-3 flex items-center justify-end gap-2">
+                        <button onClick={addEmpClassRow} disabled={!canAddEmpClassRow} title={canAddEmpClassRow ? 'Add this plan row' : 'Choose a GMI Research Sum Class Category and enter a Customer Plan Class first'} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded text-xs font-bold flex items-center gap-1 transition-colors">
+                          <Plus size={13} /><span>Add Plan</span>
+                        </button>
+                        <button onClick={clearEmpClassRows} disabled={empClassCensus.length === 0} className="px-3 py-1.5 bg-red-500 hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded text-xs font-bold flex items-center gap-1 transition-colors">
+                          <X size={13} /><span>Remove All</span>
+                        </button>
+                      </div>
                     </div>
 
                     <div className="overflow-x-auto border border-gray-150 rounded">
@@ -3665,40 +3849,91 @@ export const ProposalDetail: React.FC<ProposalDetailProps> = ({ proposal, allPro
                         <thead className="bg-gray-50 text-[10px] font-black text-gray-500 uppercase border-b border-gray-150">
                           <tr>
                             <th className="px-3 py-2">EIB Res'ch Sum Class Category</th>
-                            <th className="px-3 py-2">Customer Plan Class</th>
-                            <th className="px-3 py-2 text-right">Employee</th>
-                            <th className="px-3 py-2 text-right">Spouse</th>
-                            <th className="px-3 py-2 text-right">Children</th>
-                            <th className="px-3 py-2 text-right">Other</th>
-                            <th className="px-3 py-2 text-right w-12">Action</th>
+                            {([
+                              ['customerPlanClass', 'Customer Plan Class', false],
+                              ['emp', 'Employee Count', true],
+                              ['spouse', 'Spouse Count', true],
+                              ['child', 'Children Count', true],
+                              ['other', 'Other Count', true],
+                            ] as const).map(([key, label, numeric]) => (
+                              <th key={key} className={`px-3 py-2 ${numeric ? 'text-right' : ''}`}>
+                                <button type="button" onClick={() => toggleEmpClassSort(key)} title={`Sort by ${label}`} className={`inline-flex items-center gap-1 uppercase hover:text-gray-800 transition-colors ${empClassSort && empClassSort.key === key ? 'text-teal-700' : ''}`}>
+                                  <span>{label}</span>
+                                  <ArrowUpDown size={10} className={empClassSort && empClassSort.key === key ? 'text-teal-600' : 'text-gray-300'} />
+                                  {empClassSort && empClassSort.key === key && <span className="text-[8px] leading-none">{empClassSort.dir === 'asc' ? '▲' : '▼'}</span>}
+                                </button>
+                              </th>
+                            ))}
+                            <th className="px-3 py-2 text-center w-16">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {empClassCensus.map(r => (
-                            <tr key={r.id} className="hover:bg-gray-50/50 transition-colors">
-                              <td className="p-1">
-                                <select value={r.gmiResearchSumClass} onChange={e => updateEmpClassRow(r.id, { gmiResearchSumClass: e.target.value })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-teal-500 outline-none text-xs text-gray-700 font-medium">
-                                  {Array.from(new Set([...GMI_RESEARCH_SUM_CLASSES, r.gmiResearchSumClass])).map(c => <option key={c} value={c}>{c}</option>)}
-                                </select>
-                              </td>
-                              <td className="p-1"><input type="text" value={r.customerPlanClass} onChange={e => updateEmpClassRow(r.id, { customerPlanClass: e.target.value })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-teal-500 outline-none text-xs font-semibold text-gray-800" /></td>
-                              <td className="p-1"><input type="number" value={r.emp} onChange={e => updateEmpClassRow(r.id, { emp: Number(e.target.value) || 0 })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-teal-500 outline-none text-xs font-mono text-right text-teal-700 font-bold" /></td>
-                              <td className="p-1"><input type="number" value={r.spouse} onChange={e => updateEmpClassRow(r.id, { spouse: Number(e.target.value) || 0 })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-teal-500 outline-none text-xs font-mono text-right text-gray-700" /></td>
-                              <td className="p-1"><input type="number" value={r.child} onChange={e => updateEmpClassRow(r.id, { child: Number(e.target.value) || 0 })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-teal-500 outline-none text-xs font-mono text-right text-gray-700" /></td>
-                              <td className="p-1"><input type="number" value={r.other} onChange={e => updateEmpClassRow(r.id, { other: Number(e.target.value) || 0 })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-teal-500 outline-none text-xs font-mono text-right text-gray-700" /></td>
-                              <td className="p-1 text-center"><button onClick={() => deleteEmpClassRow(r.id)} className="text-gray-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition-colors"><Trash2 size={12} /></button></td>
+                          {sortedEmpClassCensus.length === 0 ? (
+                            <tr>
+                              <td colSpan={7} className="px-3 py-8 text-center text-gray-400">No Data</td>
                             </tr>
-                          ))}
-                          <tr className="bg-gray-50 font-bold font-mono">
-                            <td className="px-3 py-2 font-sans" colSpan={2}>Total</td>
-                            <td className="px-3 py-2 text-right text-teal-700">{empClassCensus.reduce((s, r) => s + r.emp, 0)}</td>
-                            <td className="px-3 py-2 text-right">{empClassCensus.reduce((s, r) => s + r.spouse, 0)}</td>
-                            <td className="px-3 py-2 text-right">{empClassCensus.reduce((s, r) => s + r.child, 0)}</td>
-                            <td className="px-3 py-2 text-right">{empClassCensus.reduce((s, r) => s + r.other, 0)}</td>
-                            <td className="px-3 py-2"></td>
-                          </tr>
+                          ) : (
+                            <>
+                              {sortedEmpClassCensus.map(r => (
+                                <tr key={r.id} className="hover:bg-gray-50/50 transition-colors">
+                                  <td className="p-1">
+                                    <select value={r.gmiResearchSumClass} onChange={e => updateEmpClassRow(r.id, { gmiResearchSumClass: e.target.value })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-teal-500 outline-none text-xs text-gray-700 font-medium">
+                                      {Array.from(new Set([...GMI_RESEARCH_SUM_CLASSES, r.gmiResearchSumClass])).map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                  </td>
+                                  <td className="p-1"><input type="text" value={r.customerPlanClass} onChange={e => updateEmpClassRow(r.id, { customerPlanClass: e.target.value })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-teal-500 outline-none text-xs font-semibold text-gray-800" /></td>
+                                  <td className="p-1"><input type="number" value={r.emp} onChange={e => updateEmpClassRow(r.id, { emp: Number(e.target.value) || 0 })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-teal-500 outline-none text-xs font-mono text-right text-teal-700 font-bold" /></td>
+                                  <td className="p-1"><input type="number" value={r.spouse} onChange={e => updateEmpClassRow(r.id, { spouse: Number(e.target.value) || 0 })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-teal-500 outline-none text-xs font-mono text-right text-gray-700" /></td>
+                                  <td className="p-1"><input type="number" value={r.child} onChange={e => updateEmpClassRow(r.id, { child: Number(e.target.value) || 0 })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-teal-500 outline-none text-xs font-mono text-right text-gray-700" /></td>
+                                  <td className="p-1"><input type="number" value={r.other} onChange={e => updateEmpClassRow(r.id, { other: Number(e.target.value) || 0 })} className="w-full p-1 border border-transparent bg-transparent hover:border-gray-200 hover:bg-white focus:bg-white focus:border-teal-500 outline-none text-xs font-mono text-right text-gray-700" /></td>
+                                  <td className="p-1 text-center"><button onClick={() => deleteEmpClassRow(r.id)} title="Delete row" className="text-gray-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition-colors"><Trash2 size={12} /></button></td>
+                                </tr>
+                              ))}
+                              <tr className="bg-gray-50 font-bold font-mono">
+                                <td className="px-3 py-2 font-sans" colSpan={2}>Total</td>
+                                <td className="px-3 py-2 text-right text-teal-700">{empClassCensus.reduce((s, r) => s + r.emp, 0)}</td>
+                                <td className="px-3 py-2 text-right">{empClassCensus.reduce((s, r) => s + r.spouse, 0)}</td>
+                                <td className="px-3 py-2 text-right">{empClassCensus.reduce((s, r) => s + r.child, 0)}</td>
+                                <td className="px-3 py-2 text-right">{empClassCensus.reduce((s, r) => s + r.other, 0)}</td>
+                                <td className="px-3 py-2"></td>
+                              </tr>
+                            </>
+                          )}
                         </tbody>
                       </table>
+                    </div>
+                  </div>
+
+                  {/* Live Edit-Proposal action bar (Basic Info step): Lost / Validate / Next / Save / Save & Exit / Go to Finalised */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                    <div className="flex items-center gap-2 text-[10px] text-gray-400">
+                      {selectedChild.lastSavedAt ? <span>Last saved <span className="font-mono text-gray-600">{selectedChild.lastSavedAt}</span></span> : <span>Not yet saved in this session</span>}
+                      {selectedChild.status === 'Declined' && (
+                        <span className="px-1.5 py-0.5 bg-red-50 text-red-600 border border-red-200 rounded font-black uppercase tracking-wider">Lost{selectedChild.lostReason ? ` — ${selectedChild.lostReason}` : ''}</span>
+                      )}
+                      {selectedChild.odooPushed && (
+                        <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded font-black uppercase tracking-wider">Finalised{selectedChild.odooPushDate ? ` · ${selectedChild.odooPushDate}` : ''}</span>
+                      )}
+                    </div>
+                    <div className="inline-flex items-stretch rounded border border-emerald-600 overflow-hidden text-xs font-semibold divide-x divide-emerald-600 bg-white">
+                      <button onClick={handleMarkLost} disabled={selectedChild.status === 'Converted to Policy' || selectedChild.status === 'Declined'} className="px-3 py-1.5 text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 transition-colors">
+                        <XCircle size={13} /><span>Lost</span>
+                      </button>
+                      <button onClick={handleValidateBasicInfo} className="px-3 py-1.5 text-emerald-700 hover:bg-emerald-50 flex items-center gap-1.5 transition-colors">
+                        <ClipboardCheck size={13} /><span>Validate</span>
+                      </button>
+                      <button onClick={() => setActiveWorkspaceTab('benefits')} title="Go to the Coverage tab" className="px-3 py-1.5 text-emerald-700 hover:bg-emerald-50 flex items-center gap-1.5 transition-colors">
+                        <span>Next</span><ChevronRight size={13} />
+                      </button>
+                      <button onClick={() => handleSaveProposal(false)} className="px-3 py-1.5 text-emerald-700 hover:bg-emerald-50 flex items-center gap-1.5 transition-colors">
+                        <Save size={13} /><span>Save</span>
+                      </button>
+                      <button onClick={() => handleSaveProposal(true)} title="Save and return to the Opportunity" className="px-3 py-1.5 text-emerald-700 hover:bg-emerald-50 flex items-center gap-1.5 transition-colors">
+                        <Save size={13} /><span>Save & Exit</span>
+                      </button>
+                      <button onClick={() => handleFinalizePush(selectedChild)} disabled={!!selectedChild.odooPushed || selectedChild.status === 'Declined'} title={selectedChild.odooPushed ? 'Already finalised and pushed to Odoo' : 'Finalise → push the quotation to Odoo'} className="px-3 py-1.5 text-emerald-700 hover:bg-emerald-50 font-black disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 transition-colors">
+                        <CheckCircle2 size={13} /><span>{selectedChild.odooPushed ? 'Finalised' : 'Go to Finalised'}</span>
+                      </button>
                     </div>
                   </div>
                 </div>
