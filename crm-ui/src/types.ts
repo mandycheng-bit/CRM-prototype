@@ -309,6 +309,12 @@ export interface ChildProposal {
   proposerName?: string;
   salesCode2?: string;
   salesCode3?: string;
+  salesName2?: string; // Secondary Sales Name — live Basic Info "Secondary Sales Code (Optional)" block
+  salesPercentage2?: number; // Secondary Sales Percentage
+  salesName3?: string; // Tertiary Sales Name — live Basic Info "Tertiary Sales Code (Optional)" block
+  salesPercentage3?: number; // Tertiary Sales Percentage
+  lostReason?: string; // set by the Basic-Info footer "Lost" action (status → Declined)
+  lastSavedAt?: string; // stamped by the Basic-Info footer Save / Save & Exit
   // Top KPI header fields
   presentIncurredAmount?: number;
   presentPaidAmount?: number;
